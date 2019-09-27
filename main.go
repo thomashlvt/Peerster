@@ -124,10 +124,11 @@ func handleUIConn(conn *net.UDPConn) {
 	err = protobuf.Decode(buffer[:n], &msg)
 	if err != nil {
 		fmt.Printf("ERROR when decoding packet: '%v'\n", err)
-	} else {
-		fmt.Printf("CLIENT MESSAGE '%v'\n", msg.Text)
-		fmt.Printf("PEERS %v\n", setToString(KnownPeers))
+		return
 	}
+
+	fmt.Printf("CLIENT MESSAGE %v\n", msg.Text)
+	fmt.Printf("PEERS %v\n", setToString(KnownPeers))
 
 	simpleMsg := SimpleMessage{
 		name,
@@ -157,10 +158,7 @@ func handlePeerConn(conn *net.UDPConn) {
 	err = protobuf.Decode(buffer[:n], &packet)
 	if err != nil {
 		fmt.Printf("ERROR when decoding packet: '%v'\n", err)
-	} else {
-		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
-			packet.Simple.OriginalName, packet.Simple.RelayPeerAddr, packet.Simple.Contents)
-		fmt.Printf("PEERS %v\n", setToString(KnownPeers))
+		return
 	}
 
 	sender := packet.Simple.RelayPeerAddr
@@ -169,6 +167,11 @@ func handlePeerConn(conn *net.UDPConn) {
 	if !KnownPeers[sender] {
 		KnownPeers[sender] = true
 	}
+
+	fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
+		packet.Simple.OriginalName, packet.Simple.RelayPeerAddr, packet.Simple.Contents)
+	fmt.Printf("PEERS %v\n", setToString(KnownPeers))
+
 	// Change relay address to own address
 	packet.Simple.RelayPeerAddr = gossipAddr
 

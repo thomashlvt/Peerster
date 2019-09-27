@@ -49,12 +49,10 @@ func sendMsg(msg string, port string) {
 		fmt.Println(err)
 	}
 
-	n, err := conn.Write(packetBytes)
+	_, err = conn.Write(packetBytes)
 
 	if err != nil {
 		fmt.Printf("ERROR: %v\n", err)
-	} else {
-		fmt.Printf("Successfully sent %v bytes to localhost:%v\n", n, port)
 	}
 }
 

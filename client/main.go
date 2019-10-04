@@ -1,6 +1,8 @@
 package main
 
 import (
+	. "github.com/thomashlvt/Peerster/utils"
+
 	"flag"
 	"fmt"
 	"github.com/dedis/protobuf"
@@ -10,40 +12,73 @@ import (
 var (
 	UIPort 	string
 	msg string
+	get bool
 )
 
 func main() {
 	// Load command line arguments
 	flag.StringVar(&UIPort, "UIPort", "8080", "port for the UI client (default '8080'")
 	flag.StringVar(&msg, "msg", "", "message to be sent")
-
+	flag.BoolVar(&get, "get", false, "get messages")
 	flag.Parse()
 
 	// Send message to Peerster
-	sendMsg(msg, UIPort)
+	if !get {
+		sendMsg()
+	} else {
+		getMsg()
+	}
 }
 
-// Message format that will be marshalled
-type Message struct {
-	Text string
+func getMsg() {
+	// Set up UDP socket
+	addr := "127.0.0.1" + ":" + UIPort
+	remoteAddr, err := net.ResolveUDPAddr("udp", addr)
+	localAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:9998")
+	conn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: %v", err))
+	}
+
+	get := "42"
+	packetBytes, err := protobuf.Encode(&ClientMessage{GET: &get})
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: Could not serialize message: %v", err))
+	}
+
+	_, err = conn.WriteToUDP(packetBytes, remoteAddr)
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: %v", err))
+	}
+	buffer := make([]byte, 1024)
+	n, _, err := conn.ReadFromUDP(buffer)
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: %v", err))
+	}
+	msgs := Messages{}
+	err = protobuf.Decode(buffer[:n], &msgs)
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: %v", err))
+	}
+	for _, msg := range msgs.Msgs {
+		fmt.Printf("MSG from %v with ID %v: '%v'\n", msg.Origin, msg.ID, msg.Text)
+	}
 }
 
 // Send message to UDP server on localhost:port
-func sendMsg(msg string, port string) {
+func sendMsg() {
 	// Set up UDP socket
-	addr := "127.0.0.1" + ":" + port
+	addr := "127.0.0.1" + ":" + UIPort
 	remoteAddr, err := net.ResolveUDPAddr("udp", addr)
 	conn, err := net.DialUDP("udp", nil, remoteAddr)
-
 	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		return
+		panic(fmt.Sprintf("ERROR: %v", err))
 	}
 
 	// Close connection after message is sent
 	defer conn.Close()
 
-	packetBytes, err := protobuf.Encode(&Message{msg})
+	packetBytes, err := protobuf.Encode(&ClientMessage{POST: &msg})
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)

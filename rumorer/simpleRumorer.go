@@ -1,4 +1,4 @@
-package simpleRumorer
+package rumorer
 
 import (
 	"github.com/dedis/protobuf"
@@ -31,6 +31,23 @@ func NewSimpleRumorer(addr string, name string, peers *Set, in chan *Packet, out
 		uiIn:  uiIn,
 		debug: debug,
 	}
+}
+
+func (s *SimpleRumorer) Name() string {
+	return s.name
+}
+
+func (s *SimpleRumorer) GetMessages() []*RumorMessage {
+	// Does not work in simple mode
+	return make([]*RumorMessage, 0)
+}
+
+func (s *SimpleRumorer) GetPeers() []UDPAddr {
+	return s.peers.Data()
+}
+
+func (s *SimpleRumorer) AddPeer(peer UDPAddr) {
+	s.peers.Add(peer)
 }
 
 func (s *SimpleRumorer) Run() {

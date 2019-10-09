@@ -44,7 +44,7 @@ func NewRumorer(name string, peers *Set,
 	return &Rumorer{
 		name:        name,
 		peers:       peers,
-		ID:          0,
+		ID:          1,
 		in:          in,
 		out:         out,
 		uiIn:        uiIn,
@@ -60,6 +60,26 @@ func NewRumorer(name string, peers *Set,
 		debug:       debug,
 		maxRetries:  4,
 	}
+}
+
+func (r *Rumorer) Name() string {
+	return r.name
+}
+
+func (r *Rumorer) GetMessages() []*RumorMessage {
+	res := make([]*RumorMessage, 0)
+	for _, v := range r.messages {
+		res = append(res, v...)
+	}
+	return res
+}
+
+func (r *Rumorer) GetPeers() []UDPAddr {
+	return r.peers.Data()
+}
+
+func (r *Rumorer) AddPeer(peer UDPAddr) {
+	r.peers.Add(peer)
 }
 
 func (r *Rumorer) Run() {
@@ -395,7 +415,7 @@ func (r *Rumorer) updateState(msg *RumorMessage) (res bool) {
 
 	curr, exists := r.state[msg.Origin]
 	if !exists {
-		curr = 0
+		curr = 1
 	}
 	if curr == msg.ID {
 		r.state[msg.Origin] = curr + 1

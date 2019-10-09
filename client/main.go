@@ -24,13 +24,13 @@ func main() {
 
 	// Send message to Peerster
 	if !get {
-		sendMsg()
+		SendMsg()
 	} else {
-		getMsg()
+		GetMsg()
 	}
 }
 
-func getMsg() {
+func GetMsg() {
 	// Set up UDP socket
 	addr := "127.0.0.1" + ":" + UIPort
 	remoteAddr, err := net.ResolveUDPAddr("udp", addr)
@@ -66,7 +66,7 @@ func getMsg() {
 }
 
 // Send message to UDP server on localhost:port
-func sendMsg() {
+func SendMsg() {
 	// Set up UDP socket
 	addr := "127.0.0.1" + ":" + UIPort
 	remoteAddr, err := net.ResolveUDPAddr("udp", addr)

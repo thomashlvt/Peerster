@@ -24,7 +24,8 @@ func main() {
 
 	// Send message to Peerster
 	if !get {
-		SendMsg()
+		addr := "127.0.0.1" + ":" + UIPort
+		SendMsg(addr)
 	} else {
 		GetMsg()
 	}
@@ -66,26 +67,25 @@ func GetMsg() {
 }
 
 // Send message to UDP server on localhost:port
-func SendMsg() {
+func SendMsg(addr string) {
 	// Set up UDP socket
-	addr := "127.0.0.1" + ":" + UIPort
 	remoteAddr, err := net.ResolveUDPAddr("udp", addr)
 	conn, err := net.DialUDP("udp", nil, remoteAddr)
 	if err != nil {
 		panic(fmt.Sprintf("ERROR: %v", err))
 	}
-
 	// Close connection after message is sent
 	defer conn.Close()
 
+	// Encode the message
 	packetBytes, err := protobuf.Encode(&ClientMessage{POST: &msg})
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)
 	}
 
+	// Write the bytes to the UDP socket
 	_, err = conn.Write(packetBytes)
-
 	if err != nil {
 		fmt.Printf("ERROR: %v\n", err)
 	}

@@ -17,9 +17,10 @@ type Gossiper struct {
 	name string
 
 	debug bool
+	withGUI bool
 }
 
-func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string, debug bool) *Gossiper {
+func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string, debug bool, withGUI bool, antiEntropy int) *Gossiper {
 
 	uiServer := NewServer("127.0.0.1:" + uiPort)
 	gossipServer := NewServer(gossipAddr)
@@ -29,7 +30,7 @@ func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr
 	if simple {
 		rumorer = NewSimpleRumorer(gossipAddr, name, peers, gossipServer.Ingress(), gossipServer.Outgress(), uiServer.Ingress(), debug)
 	} else {
-		rumorer = NewRumorer(name, peers, gossipServer.Ingress(), gossipServer.Outgress(), uiServer.Ingress(), uiServer.Outgress(), debug)
+		rumorer = NewRumorer(name, peers, gossipServer.Ingress(), gossipServer.Outgress(), uiServer.Ingress(), uiServer.Outgress(), debug, antiEntropy)
 	}
 
 	webServer := NewWebServer(rumorer, uiPort)
@@ -41,13 +42,16 @@ func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr
 		Rumorer: rumorer,
 		name: name,
 		debug: debug,
+		withGUI: withGUI,
 	}
 }
 
 func (g *Gossiper) Run() {
 	g.UIServer.Run()
 	g.GossipServer.Run()
-	g.WebServer.Run()
+	if g.withGUI {
+		g.WebServer.Run()
+	}
 	g.Rumorer.Run()
 }
 

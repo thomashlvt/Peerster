@@ -39,7 +39,7 @@ type Rumorer struct {
 }
 
 func NewRumorer(name string, peers *Set,
-	in chan *Packet, out chan *Packet, uiIn chan *Packet, uiOut chan *Packet, debug bool) *Rumorer {
+	in chan *Packet, out chan *Packet, uiIn chan *Packet, uiOut chan *Packet, debug bool, antiEntropy int) *Rumorer {
 
 	return &Rumorer{
 		name:        name,
@@ -56,7 +56,7 @@ func NewRumorer(name string, peers *Set,
 		statusChans: make(map[UDPAddr] chan *StatusPacket),
 		statusChansMutex: &sync.RWMutex{},
 		timeout:     time.Second * 30,
-		antiEntropyTimout: time.Second * 10,
+		antiEntropyTimout: time.Second * time.Duration(antiEntropy),
 		debug:       debug,
 		maxRetries:  4,
 	}
@@ -86,7 +86,6 @@ func (r *Rumorer) Run() {
 	go func() {
 		for {
 			pack := <- r.uiIn
-			fmt.Printf("PEERS %v\n", r.peers)
 			go r.uiIngress(pack.Data, pack.Addr)
 		}
 	}()
@@ -94,7 +93,6 @@ func (r *Rumorer) Run() {
 	go func() {
 		for {
 			pack := <- r.in
-			fmt.Printf("PEERS %v\n", r.peers)
 			go r.gossipIngress(pack.Data, pack.Addr)
 		}
 	}()
@@ -115,7 +113,9 @@ func (r *Rumorer) antiEntropy() {
 	}
 	randPeer, ok := r.peers.Rand()
 	if !ok {
-		fmt.Printf("[DEBUG] could not select random peer\n")
+		if r.debug {
+			fmt.Printf("[DEBUG] could not select random peer\n")
+		}
 		return
 	}
 	r.sendState(randPeer)
@@ -164,9 +164,33 @@ func (r *Rumorer) gossipIngress(data []byte, address UDPAddr) {
 
 	// Dispatch packet according to type
 	if packet.Rumor != nil {
-		r.handleRumor(packet.Rumor, address)
+		msg := packet.Rumor
+
+		// expand peers list
+		r.peers.Add(address)
+
+		// print logging info
+		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n", msg.Origin, address, msg.ID, msg.Text)
+		fmt.Printf("PEERS %v\n", r.peers)
+
+		// handle rumor
+		r.handleRumor(msg, address)
 	} else if packet.Status != nil {
-		r.handleStatus(packet.Status, address)
+		msg := packet.Status
+
+		// expand peers list
+		r.peers.Add(address)
+
+		// print logging info
+		fmt.Printf("STATUS from %v ", address)
+		for _, entry := range msg.Want {
+			fmt.Printf("peer %v nextID %v ", entry.Identifier, entry.NextID)
+		}
+		fmt.Printf("\n")
+		fmt.Printf("PEERS %v\n", r.peers)
+
+		// handle status
+		r.handleStatus(msg, address)
 	} // Ignore others
 }
 
@@ -221,7 +245,9 @@ func (r *Rumorer) startCoinMongering(msg *RumorMessage, except UDPAddr) {
 	if rand.Int() % 2 == 0 {
 		randPeer, ok := r.peers.RandExcept(except)
 		if !ok {
-			fmt.Printf("[DEBUG] could not select random peer\n")
+			if r.debug {
+				fmt.Printf("[DEBUG] could not select random peer\n")
+			}
 			return
 		}
 		fmt.Printf("FLIPPED COIN sending rumor to %v\n", randPeer)
@@ -251,7 +277,7 @@ func (r *Rumorer) startMongering(msg *RumorMessage, with UDPAddr) bool {
 	} else if youHave != nil {
 		r.sendState(with) //TODO retries?
 	} else {
-		fmt.Printf("IN SYNC WITTH %v\n", with)
+		fmt.Printf("IN SYNC WITH %v\n", with)
 		r.startCoinMongering(msg, with) //TODO retries?
 	}
 
@@ -321,12 +347,7 @@ func (r *Rumorer) compareStatus(msg *StatusPacket) (iHave *PeerStatus, youHave*P
 func (r *Rumorer) handleRumor(msg *RumorMessage, sender UDPAddr) {
 	accepted := r.updateState(msg)
 	if sender.String() != "" { // TODO `&& accepted` ?
-		// expand peers list
-		r.peers.Add(sender)
-
 		r.sendState(sender)
-
-		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n", msg.Origin, sender, msg.ID, msg.Text)
 	}
 	if accepted {
 		if r.debug {
@@ -340,7 +361,9 @@ func (r *Rumorer) handleRumor(msg *RumorMessage, sender UDPAddr) {
 		for !ok || retries == r.maxRetries {
 			randPeer, okRand := r.peers.RandExcept(sender)
 			if !okRand {
-				fmt.Printf("[DEBUG] could not select random peer\n")
+				if r.debug {
+					fmt.Printf("[DEBUG] could not select random peer\n")
+				}
 				return
 			}
 			ok = r.startMongering(msg, randPeer)
@@ -350,11 +373,6 @@ func (r *Rumorer) handleRumor(msg *RumorMessage, sender UDPAddr) {
 }
 
 func (r *Rumorer) handleStatus(msg *StatusPacket, sender UDPAddr) {
-	fmt.Printf("STATUS from %v ", sender)
-	for _, entry := range msg.Want {
-		fmt.Printf("peer %v nextID %v ", entry.Identifier, entry.NextID)
-	}
-	fmt.Printf("\n")
 	// expand peers list
 	r.peers.Add(sender)
 

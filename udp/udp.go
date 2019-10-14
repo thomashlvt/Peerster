@@ -67,7 +67,6 @@ func (s *Server) Listen() {
 		if err != nil {
 			fmt.Printf("ERROR when reading from connection: %v", err)
 		}
-		fmt.Printf("[DEBUG] Packet received from %v\n", addr)
 		s.ingress <- &Packet{UDPAddr{addr.String()},buffer[:n]}
 	}
 }

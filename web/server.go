@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// Server that handles the HTTP requests from the GUI running on localhost:8080
 type WebServer struct {
 	rumorer GenericRumorer
 	router *mux.Router

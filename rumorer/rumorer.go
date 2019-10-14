@@ -119,7 +119,7 @@ func (r *Rumorer) uiIngress(data []byte, address UDPAddr) {
 	// All messages received from the client, get processed here
 
 	// Decode the message
-	msg := ClientMessage{}
+	msg := Message{}
 	err := protobuf.Decode(data, &msg)
 	if err != nil {
 		panic(fmt.Sprintf("ERROR when decoding packet: %v", err))
@@ -241,7 +241,7 @@ func (r *Rumorer) handleStatus(msg *StatusPacket, sender UDPAddr) {
 	}
 }
 
-func (r *Rumorer) startMongering(msg *RumorMessage, with UDPAddr) bool {
+func (r *Rumorer) startMongering(msg *RumorMessage, with UDPAddr ) bool {
 	// Returns false if peer timed out
 
 	// Make a channel to receive status packets from the peer we are mongering with

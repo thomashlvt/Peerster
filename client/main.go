@@ -36,7 +36,7 @@ func SendMsg(addr string) {
 	defer conn.Close()
 
 	// Encode the message
-	packetBytes, err := protobuf.Encode(&ClientMessage{msg})
+	packetBytes, err := protobuf.Encode(&Message{msg})
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)

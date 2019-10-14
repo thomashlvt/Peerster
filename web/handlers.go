@@ -13,6 +13,7 @@ import (
 )
 
 func (ws *WebServer) handleGetNodeID(w http.ResponseWriter, r *http.Request) {
+	// Get the NodeID from the rumorer, encode it, and write it to the GUI
 	type respStruct struct{ Id string `json:"id"` }
 	err := json.NewEncoder(w).Encode(respStruct{Id: ws.rumorer.Name()})
 	if err != nil {
@@ -21,6 +22,7 @@ func (ws *WebServer) handleGetNodeID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *WebServer) handleGetMessages(w http.ResponseWriter, r *http.Request) {
+	// Get all messages from the rumorer, encode them, and write them to the GUI
 	type msgStruct struct{
 		Origin string `json:"origin"`
 		Id uint32 `json:"id"`
@@ -39,6 +41,7 @@ func (ws *WebServer) handleGetMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *WebServer) handleGetPeers(w http.ResponseWriter, r *http.Request) {
+	// Get all peers from the rumorer, encode them, and return them to the GUI client
 	type respStruct struct{ Peers []string `json:"peers"`}
 	peers := ws.rumorer.Peers()
 	resp := respStruct{Peers: make([]string, len(peers))}
@@ -52,6 +55,7 @@ func (ws *WebServer) handleGetPeers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *WebServer) handlePostMessages(w http.ResponseWriter, r *http.Request) {
+	// Decode the message and send it to the gossiper over UDP
 	decoder := json.NewDecoder(r.Body)
 	var data struct {Text string `json:"text"`}
 	err := decoder.Decode(&data)
@@ -59,7 +63,7 @@ func (ws *WebServer) handlePostMessages(w http.ResponseWriter, r *http.Request) 
 		panic(err)
 	}
 
-	// Send message to client
+	// Send message to the Gossiper
 
 	// Set up UDP socket
 	addr := "127.0.0.1" + ":" + ws.uiPort
@@ -72,7 +76,7 @@ func (ws *WebServer) handlePostMessages(w http.ResponseWriter, r *http.Request) 
 	// Close connection after message is sent
 	defer conn.Close()
 
-	packetBytes, err := protobuf.Encode(&ClientMessage{data.Text})
+	packetBytes, err := protobuf.Encode(&Message{data.Text})
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)
@@ -86,6 +90,7 @@ func (ws *WebServer) handlePostMessages(w http.ResponseWriter, r *http.Request) 
 }
 
 func (ws *WebServer) handlePostPeers(w http.ResponseWriter, r *http.Request) {
+	// Decode request, and register peer with the rumorer
 	decoder := json.NewDecoder(r.Body)
 	var data struct{ Peer string `json:"peer"` }
 	err := decoder.Decode(&data)

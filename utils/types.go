@@ -1,6 +1,8 @@
 package utils
 
-type ClientMessage struct {
+// Definition of all message types
+
+type Message struct {
 	Text string
 }
 

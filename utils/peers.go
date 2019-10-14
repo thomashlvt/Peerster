@@ -8,30 +8,7 @@ import (
 	"sync"
 )
 
-type DebugMutex struct {
-	m *sync.RWMutex
-}
-
-func (m *DebugMutex) Lock() {
-	fmt.Println("Locking...")
-	//m.m.Lock()
-}
-
-func (m *DebugMutex) Unlock() {
-	fmt.Println("Unlocking...")
-	//m.m.Unlock()
-}
-
-func (m *DebugMutex) RLock() {
-	fmt.Println("RLocking...")
-	//m.m.RLock()
-}
-
-func (m *DebugMutex) RUnlock() {
-	fmt.Println("RUnlocking...")
-	//m.m.RUnlock()
-}
-
+// A set of UDPAddr, with some useful functions to abstract the management of known peers
 type Set struct {
 	data map[UDPAddr]bool
 	dataMutex *sync.RWMutex
@@ -90,7 +67,11 @@ func (s *Set) String() string {
 			res += fmt.Sprintf("%v,", k)
 		}
 	}
-	return res[:len(res)-1]
+	if len(res) > 0 {
+		return res[:len(res)-1]
+	} else {
+		return res
+	}
 }
 
 func (s *Set) Rand() (UDPAddr, bool) {

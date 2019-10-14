@@ -5,10 +5,12 @@ import (
 	"net"
 )
 
+// Wrapper type that represents a UDP address
 type UDPAddr struct {
 	Addr string
 }
 
+// Resolve this wrapper type to a *net.UDPAddr
 func (a UDPAddr) Resolve() *net.UDPAddr {
 	addr, err := net.ResolveUDPAddr("udp4", a.Addr)
 	if err != nil {
@@ -21,11 +23,14 @@ func (a UDPAddr) String() string {
 	return a.Addr
 }
 
+// These packets are used to send Data bytes to Addr over the in/out communication channels of the server
 type Packet struct {
 	Addr UDPAddr
 	Data []byte
 }
 
+// Server that listens on a UDP socket and sends the Packets it receives to the ingress channel, and
+// listens on the outgress channel and sends this data outward through the same UDP socket
 type Server struct {
 	ingress chan *Packet
 	outgress chan *Packet
@@ -61,6 +66,7 @@ func NewServer(addr string) *Server {
 }
 
 func (s *Server) Listen() {
+	// Put incoming messages in the ingress channel
 	for {
 		buffer := make([]byte, 1024)
 		n, addr, err := s.conn.ReadFromUDP(buffer)
@@ -72,6 +78,7 @@ func (s *Server) Listen() {
 }
 
 func (s *Server) Talk() {
+	// Send outgoing messages through the UDP socket
 	for {
 		data := <- s.outgress
 		_, err := s.conn.WriteToUDP(data.Data, data.Addr.Resolve())

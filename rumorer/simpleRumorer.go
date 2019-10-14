@@ -4,6 +4,7 @@ import (
 	"github.com/dedis/protobuf"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
+	"sync"
 
 	"fmt"
 )
@@ -13,6 +14,7 @@ type SimpleRumorer struct {
 	name     string
 	peers    *Set
 	messages []*RumorMessage
+	messagesMutex sync.RWMutex
 
 	// The rumorer communicates through these channels
 	in   chan *Packet
@@ -28,6 +30,7 @@ func NewSimpleRumorer(addr string, name string, peers *Set, in chan *Packet, out
 		name:     name,
 		peers:    peers,
 		messages: make([]*RumorMessage, 0),
+		messagesMutex: sync.RWMutex{},
 		in:       in,
 		out:      out,
 		uiIn:     uiIn,
@@ -40,6 +43,8 @@ func (s *SimpleRumorer) Name() string {
 }
 
 func (s *SimpleRumorer) Messages() []*RumorMessage {
+	s.messagesMutex.RLock()
+	defer s.messagesMutex.RUnlock()
 	return s.messages
 }
 
@@ -65,7 +70,7 @@ func (s *SimpleRumorer) Run() {
 			}
 
 			if gossipPack.Simple != nil {
-				s.handleSimpleMSg(gossipPack.Simple, pack.Addr)
+				go s.handleSimpleMSg(gossipPack.Simple, pack.Addr)
 			} // ignore other packets (RumorMessage and StatusPacket)
 		}
 	}()
@@ -73,17 +78,19 @@ func (s *SimpleRumorer) Run() {
 	go func() {
 		for {
 			pack := <-s.uiIn
-			msg := ClientMessage{}
+			msg := Message{}
 			err := protobuf.Decode(pack.Data, &msg)
 			if err != nil {
 				panic(fmt.Sprintf("ERROR could not decode packet: %v", err))
 			}
-			s.handleClientMsg(&msg)
+			go s.handleClientMsg(&msg)
 		}
 	}()
 }
 
 func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
+	s.messagesMutex.Lock()
+
 	// Store relay in set of known peers
 	s.peers.Add(UDPAddr{Addr: msg.RelayPeerAddr})
 
@@ -92,11 +99,14 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 	fmt.Printf("PEERS %s\n", s.peers)
 
 	// Save message
+	fmt.Println(uint32(len(s.messages)+1))
 	s.messages = append(s.messages, &RumorMessage{
 		Origin: msg.RelayPeerAddr,
-		ID:     0,
+		ID:     uint32(len(s.messages)+1), // for the GUI to see the messages as unique
 		Text:   msg.Contents,
 	})
+
+	s.messagesMutex.Unlock()
 
 	// Change relay address to own address
 	msg.RelayPeerAddr = s.addr
@@ -110,14 +120,15 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 	}
 }
 
-func (s *SimpleRumorer) handleClientMsg(msg *ClientMessage) {
+func (s *SimpleRumorer) handleClientMsg(msg *Message) {
+	s.messagesMutex.Lock()
 	fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
 	fmt.Printf("PEERS %s\n", s.peers)
 
 	// Save message
 	s.messages = append(s.messages, &RumorMessage{
 		Origin: s.addr,
-		ID:     0,
+		ID:     uint32(len(s.messages)+1), // for the GUI to see the messages as unique
 		Text:   msg.Text,
 	})
 
@@ -127,6 +138,9 @@ func (s *SimpleRumorer) handleClientMsg(msg *ClientMessage) {
 		RelayPeerAddr: s.addr,
 		Contents:      msg.Text,
 	}}
+
+	s.messagesMutex.Unlock()
+
 	for _, peer := range s.peers.Data() {
 		s.Send(&packet, peer)
 	}

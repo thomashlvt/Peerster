@@ -305,40 +305,24 @@ func (r *Rumorer) sendRumorWait(msg *RumorMessage, to UDPAddr, statusChan chan *
 	defer timer.Stop()
 
 	// channel on which the ack will be communicated by passing the status that acks the rumor
-	ack := make(chan *StatusPacket)
+	//ack := make(chan *StatusPacket)
 
 	// channel that will be used to interrupt the goroutine below
-	interrupted := make(chan bool)
+	//interrupted := make(chan bool)
 
 	// goroutine to process the incoming statuspackets and checks them for an ack of the rumor
 	// in case of ack: sends the status on ack channel
 	// can be interrupted in case of timeout
-	go func() {
-		for {
-			select {
-			case <-interrupted:
-				// Stop goroutine
-				return
-			case status := <-statusChan:
-				// Check if status packet acknowledges the rumor
-				for _, entry := range status.Want {
-					if entry.Identifier >= msg.Origin && entry.NextID == msg.ID+1 {
-						ack <- status
-					}
-				}
-			}
-		}
-	}()
 
 	select {
 	case <-timer.C:
-		interrupted <- true
+		//interrupted <- true
 		if r.debug {
 			fmt.Printf("[DEBUG] Timeout when waiting for status\n")
 		}
 		// Timed out
 		return nil
-	case status := <-ack:
+	case status := <-statusChan:
 		if r.debug {
 			fmt.Printf("[DEBUG] Packet confirmed\n")
 		}

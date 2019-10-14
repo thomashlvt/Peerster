@@ -149,13 +149,13 @@ func (s *State) Send(addr UDPAddr) {
 	defer s.stateMutex.RUnlock()
 
 	// Construct StatusPacket
-	var ack []PeerStatus
+	want := make([]PeerStatus, 0)
 	for origin, next := range s.state {
-		ack = append(ack, PeerStatus{origin, next})
+		want = append(want, PeerStatus{origin, next})
 	}
 
 	// Encode the packet
-	bytes, err := protobuf.Encode(&GossipPacket{Status: &StatusPacket{Want: ack}})
+	bytes, err := protobuf.Encode(&GossipPacket{Status: &StatusPacket{Want: want}})
 	if err != nil {
 		panic(fmt.Sprintf("ERROR could not encode packet: %v", err))
 	}

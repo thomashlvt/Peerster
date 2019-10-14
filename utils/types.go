@@ -1,8 +1,7 @@
 package utils
 
 type ClientMessage struct {
-	POST *string
-	GET *string
+	Text string
 }
 
 type SimpleMessage struct {

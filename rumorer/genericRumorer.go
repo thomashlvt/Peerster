@@ -5,10 +5,13 @@ import (
 	. "github.com/thomashlvt/Peerster/utils"
 )
 
+// Interface that defines all functions the simple/normal rumorer must implement
 type GenericRumorer interface {
-	Name() string
 	Run()
-	GetMessages() []*RumorMessage
-	GetPeers() []UDPAddr
+
+	// Needed for the webserver
+	Name() string
+	Messages() []*RumorMessage
+	Peers() []UDPAddr
 	AddPeer(addr UDPAddr)
 }

@@ -29,7 +29,7 @@ func (ws *WebServer) handleGetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	type respStruct struct{ Msgs []msgStruct `json:"msgs"`}
 	resp := respStruct{Msgs: make([]msgStruct, 0)}
-	for _, msg := range ws.rumorer.GetMessages() {
+	for _, msg := range ws.rumorer.Messages() {
 		resp.Msgs = append(resp.Msgs, msgStruct{ msg.Origin, msg.ID, msg.Text})
 	}
 	err := json.NewEncoder(w).Encode(resp)
@@ -40,7 +40,7 @@ func (ws *WebServer) handleGetMessages(w http.ResponseWriter, r *http.Request) {
 
 func (ws *WebServer) handleGetPeers(w http.ResponseWriter, r *http.Request) {
 	type respStruct struct{ Peers []string `json:"peers"`}
-	peers := ws.rumorer.GetPeers()
+	peers := ws.rumorer.Peers()
 	resp := respStruct{Peers: make([]string, len(peers))}
 	for i, peer := range peers {
 		resp.Peers[i] = peer.String()
@@ -72,7 +72,7 @@ func (ws *WebServer) handlePostMessages(w http.ResponseWriter, r *http.Request) 
 	// Close connection after message is sent
 	defer conn.Close()
 
-	packetBytes, err := protobuf.Encode(&ClientMessage{POST: &data.Text})
+	packetBytes, err := protobuf.Encode(&ClientMessage{data.Text})
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)

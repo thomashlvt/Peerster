@@ -118,10 +118,7 @@ func (s *State) Update(msg *RumorMessage) (res bool) {
 	if !exists {
 		curr = 1
 	}
-	if curr == msg.ID {
-		// Update the vector clock
-		s.state[msg.Origin] = curr + 1
-
+	if curr <= msg.ID {
 		// Save the message
 		s.messagesMutex.Lock()
 		if _, ok := s.messages[msg.Origin]; !ok {
@@ -129,6 +126,16 @@ func (s *State) Update(msg *RumorMessage) (res bool) {
 		}
 		s.messages[msg.Origin][msg.ID] = msg
 		s.messagesMutex.Unlock()
+
+		// Update the vector clock
+		s.messagesMutex.RLock()
+		_, ok := s.messages[msg.Origin][curr]
+		for ok {
+			curr += 1
+			_, ok = s.messages[msg.Origin][curr]
+			s.state[msg.Origin] = curr
+		}
+		s.messagesMutex.RUnlock()
 
 		res = true
 	} else {

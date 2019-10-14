@@ -18,7 +18,6 @@ var (
 	peers       string
 	simple      bool
 	debug       bool
-	withGUI     bool
 	antiEntropy int
 )
 
@@ -31,13 +30,12 @@ func main() {
 	flag.StringVar(&peers, "peers", "", "comma seperated list of peers in the from ip:port")
 	flag.BoolVar(&simple, "simple", false, "run gossiper in simple broadcast mode")
 	flag.BoolVar(&debug, "debug", false, "print debug information")
-	flag.BoolVar(&withGUI, "with-gui", false, "start a GUI interface on localhost:8080")
 	flag.IntVar(&antiEntropy, "antiEntropy", 10, "Timeout for running anti entropy")
 	flag.Parse()
 
 	// Parse the arguments
 	if name == "" {
-		fmt.Println("Please provide your name with the '-name' flag")
+		panic(fmt.Sprintln("Please provide your name with the '-name' flag"))
 	}
 	peersSet := NewSet()
 	for _, peer := range strings.Split(peers, ",") {
@@ -47,7 +45,7 @@ func main() {
 	}
 
 	// Initialize and run gossiper
-	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, withGUI, antiEntropy)
+	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, antiEntropy)
 	goss.Run()
 
 	// Wait forever by blocking on empty channel

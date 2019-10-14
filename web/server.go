@@ -4,7 +4,6 @@ import (
 	. "github.com/thomashlvt/Peerster/rumorer"
 
 	"github.com/gorilla/mux"
-	"log"
 	"net/http"
 	"time"
 )
@@ -25,11 +24,11 @@ func NewWebServer(rumorer GenericRumorer, uiPort string) (ws *WebServer) {
 	ws.router = mux.NewRouter()
 
 	// Serve api calls
-	ws.router.HandleFunc("/node-id", ws.handleGetNodeID).Methods("GET")
-	ws.router.HandleFunc("/messages", ws.handleGetMessages).Methods("GET")
-	ws.router.HandleFunc("/peers", ws.handleGetPeers).Methods("GET")
-	ws.router.HandleFunc("/messages", ws.handlePostMessages).Methods("POST")
-	ws.router.HandleFunc("/peers", ws.handlePostPeers).Methods("POST")
+	ws.router.HandleFunc("/id", ws.handleGetNodeID).Methods("GET")
+	ws.router.HandleFunc("/message", ws.handleGetMessages).Methods("GET")
+	ws.router.HandleFunc("/node", ws.handleGetPeers).Methods("GET")
+	ws.router.HandleFunc("/message", ws.handlePostMessages).Methods("POST")
+	ws.router.HandleFunc("/node", ws.handlePostPeers).Methods("POST")
 
 	// Serve static files (Note: relative path from Peerste root)
 	ws.router.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("web/assets"))))
@@ -46,7 +45,6 @@ func NewWebServer(rumorer GenericRumorer, uiPort string) (ws *WebServer) {
 }
 
 func (ws *WebServer) Run() {
-	go func() {
-		log.Fatal(ws.server.ListenAndServe())
-	}()
+	// Ignore errors when starting GUI
+	go ws.server.ListenAndServe()
 }

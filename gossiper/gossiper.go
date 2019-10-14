@@ -20,7 +20,7 @@ type Gossiper struct {
 	debug bool
 }
 
-func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string, debug bool, withGUI bool, antiEntropy int) *Gossiper {
+func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string, debug bool, antiEntropy int) *Gossiper {
 	// Networking connections
 	uiServer := NewServer("127.0.0.1:" + uiPort)
 	gossipServer := NewServer(gossipAddr)
@@ -34,10 +34,7 @@ func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr
 	}
 
 	// Create the webserver for interacting with the rumorer
-	var webServer *WebServer = nil
-	if withGUI {
-		webServer = NewWebServer(rumorer, uiPort)
-	}
+	webServer := NewWebServer(rumorer, uiPort)
 
 	return &Gossiper{
 		UIServer:     uiServer,

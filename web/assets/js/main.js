@@ -10,7 +10,7 @@ $(document).ready(function(){
 
     let knownMessages = new Set();
     function refreshMessages(){
-        $.getJSON("messages", function(data) {
+        $.getJSON("message", function(data) {
             for (i = 0; i < data.msgs.length; i++) {
                 m = data.msgs[i];
                 if (!knownMessages.has(JSON.stringify(m))) {
@@ -26,7 +26,7 @@ $(document).ready(function(){
 
     let knownPeers = new Set();
     function refreshKnownPeers(){
-        $.getJSON("peers", function(data) {
+        $.getJSON("node", function(data) {
             for (i = 0; i < data.peers.length; i++) {
                 if (!knownPeers.has(data.peers[i])) {
                     knownPeers.add(data.peers[i])
@@ -41,14 +41,14 @@ $(document).ready(function(){
     refreshMessages();
     refreshKnownPeers();
 
-    $.getJSON("node-id", function(data) {
+    $.getJSON("id", function(data) {
         nodeIdEl.html("<p>" + data.id + "</p>");
     });
 
     function addMessage(){
         $.ajax({
             type: 'POST',
-            url: '/messages',
+            url: '/message',
             data: JSON.stringify ({text: msgContentEl.val()}),
             contentType: "application/json",
             dataType: 'json'
@@ -70,7 +70,7 @@ $(document).ready(function(){
         }
         $.ajax({
             type: 'POST',
-            url: '/peers',
+            url: '/node',
             data: JSON.stringify ({peer: ip}),
             contentType: "application/json",
             dataType: 'json'

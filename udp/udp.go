@@ -68,11 +68,12 @@ func NewServer(addr string) *Server {
 func (s *Server) Listen() {
 	// Put incoming messages in the ingress channel
 	for {
-		buffer := make([]byte, 1024)
+		buffer := make([]byte, 4096)
 		n, addr, err := s.conn.ReadFromUDP(buffer)
 		if err != nil {
 			fmt.Printf("ERROR when reading from connection: %v", err)
 		}
+		fmt.Printf("RECEIVED %v\n", string(buffer[:n]))
 		s.ingress <- &Packet{UDPAddr{addr.String()},buffer[:n]}
 	}
 }
@@ -85,7 +86,6 @@ func (s *Server) Talk() {
 		if err != nil {
 			panic(fmt.Sprintf("ERROR could not send bytes over UDP: %v", err))
 		}
-
 	}
 }
 

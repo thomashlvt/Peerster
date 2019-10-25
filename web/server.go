@@ -30,7 +30,7 @@ func NewWebServer(rumorer GenericRumorer, uiPort string) (ws *WebServer) {
 	ws.router.HandleFunc("/message", ws.handlePostMessages).Methods("POST")
 	ws.router.HandleFunc("/node", ws.handlePostPeers).Methods("POST")
 
-	// Serve static files (Note: relative path from Peerste root)
+	// Serve static files (Note: relative path from Peerster root)
 	ws.router.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("web/assets"))))
 
 	ws.server = &http.Server{

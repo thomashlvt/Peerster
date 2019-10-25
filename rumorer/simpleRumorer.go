@@ -99,9 +99,8 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 	fmt.Printf("PEERS %s\n", s.peers)
 
 	// Save message
-	fmt.Println(uint32(len(s.messages)+1))
 	s.messages = append(s.messages, &RumorMessage{
-		Origin: msg.RelayPeerAddr,
+		Origin: msg.OriginalName,
 		ID:     uint32(len(s.messages)+1), // for the GUI to see the messages as unique
 		Text:   msg.Contents,
 	})
@@ -109,11 +108,12 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 	s.messagesMutex.Unlock()
 
 	// Change relay address to own address
+	sender := msg.RelayPeerAddr
 	msg.RelayPeerAddr = s.addr
 
 	// Gossip message to all known peers
 	for _, peer := range s.peers.Data() {
-		if peer.String() != msg.RelayPeerAddr {
+		if peer.String() != sender {
 			packet := GossipPacket{Simple: msg}
 			s.Send(&packet, peer)
 		}

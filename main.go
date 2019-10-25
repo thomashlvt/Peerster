@@ -4,6 +4,8 @@ import (
 	. "github.com/thomashlvt/Peerster/gossiper"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
+	"math/rand"
+	"time"
 
 	"flag"
 	"fmt"
@@ -32,6 +34,9 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "print debug information")
 	flag.IntVar(&antiEntropy, "antiEntropy", 10, "Timeout for running anti entropy")
 	flag.Parse()
+
+	// Seed random generator
+	rand.Seed(time.Now().UTC().UnixNano())
 
 	// Parse the arguments
 	if name == "" {

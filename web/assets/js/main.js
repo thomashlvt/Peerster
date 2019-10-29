@@ -8,6 +8,8 @@ $(document).ready(function(){
     let peerContentEl = $("#add-peer-content");
     let peerButtonEl = $("#add-peer-button");
 
+    let dsdvOriginsEl = $("#dsdv-origins");
+
     let knownMessages = new Set();
     function refreshMessages(){
         $.getJSON("message", function(data) {
@@ -29,7 +31,7 @@ $(document).ready(function(){
         $.getJSON("node", function(data) {
             for (i = 0; i < data.peers.length; i++) {
                 if (!knownPeers.has(data.peers[i])) {
-                    knownPeers.add(data.peers[i])
+                    knownPeers.add(data.peers[i]);
                     peersEl.append("<li>" + data.peers[i] + "</li>")
                 }
             }
@@ -38,8 +40,23 @@ $(document).ready(function(){
         });
     }
 
+    let dsdvOrigins = new Set();
+    function refreshDSDV() {
+        $.getJSON("dsdv", function(data) {
+            for (i = 0; i < data.origins.length; i++) {
+                if (!dsdvOrigins.has(data.origins[i])) {
+                    dsdvOrigins.add(data.origins[i]);
+                    dsdvOriginsEl.append("<li>" + data.origins[i] + "</li>")
+                }
+            }
+        }).always(function(){
+            setTimeout(refreshDSDV, 100);
+        })
+    }
+
     refreshMessages();
     refreshKnownPeers();
+    refreshDSDV();
 
     $.getJSON("id", function(data) {
         nodeIdEl.html("<p>" + data.id + "</p>");

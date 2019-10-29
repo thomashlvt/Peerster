@@ -21,6 +21,7 @@ var (
 	simple      bool
 	debug       bool
 	antiEntropy int
+	routeRumoring int
 )
 
 func main() {
@@ -33,6 +34,8 @@ func main() {
 	flag.BoolVar(&simple, "simple", false, "run gossiper in simple broadcast mode")
 	flag.BoolVar(&debug, "debug", false, "print debug information")
 	flag.IntVar(&antiEntropy, "antiEntropy", 10, "Timeout for running anti entropy")
+	flag.IntVar(&routeRumoring, "rtimer", 0, "Timeout in seconds to send route rumors. 0 (default) " +
+		"means disable sending route rumors.")
 	flag.Parse()
 
 	// Seed random generator
@@ -50,10 +53,11 @@ func main() {
 	}
 
 	// Initialize and run gossiper
-	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, antiEntropy)
+	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, antiEntropy, routeRumoring)
 	goss.Run()
 
-	// Wait forever by blocking on empty channel
-	wait := make(chan struct{})
-	<-wait
+	// Wait forever
+	select{}
 }
+
+// TODO: Don't print empty messages in GUI

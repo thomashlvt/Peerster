@@ -2,6 +2,7 @@ package web
 
 import (
 	. "github.com/thomashlvt/Peerster/rumorer"
+	. "github.com/thomashlvt/Peerster/privateRumorer"
 
 	"github.com/gorilla/mux"
 	"net/http"
@@ -11,16 +12,19 @@ import (
 // Server that handles the HTTP requests from the GUI running on localhost:8080
 type WebServer struct {
 	rumorer GenericRumorer
+	privateRumorer *PrivateRumorer
+
 	router *mux.Router
 	server *http.Server
 
 	uiPort string
 }
 
-func NewWebServer(rumorer GenericRumorer, uiPort string) (ws *WebServer) {
+func NewWebServer(rumorer GenericRumorer, privateRumorer *PrivateRumorer, uiPort string) (ws *WebServer) {
 	ws = &WebServer{}
 	ws.uiPort = uiPort
 	ws.rumorer = rumorer
+	ws.privateRumorer = privateRumorer
 	ws.router = mux.NewRouter()
 
 	// Serve api calls
@@ -29,6 +33,7 @@ func NewWebServer(rumorer GenericRumorer, uiPort string) (ws *WebServer) {
 	ws.router.HandleFunc("/node", ws.handleGetPeers).Methods("GET")
 	ws.router.HandleFunc("/message", ws.handlePostMessages).Methods("POST")
 	ws.router.HandleFunc("/node", ws.handlePostPeers).Methods("POST")
+	ws.router.HandleFunc("/dsdv", ws.handleGetOrigins).Methods("GET")
 
 	// Serve static files (Note: relative path from Peerster root)
 	ws.router.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("web/assets"))))

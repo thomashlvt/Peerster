@@ -76,7 +76,7 @@ func (ws *WebServer) handlePostMessages(w http.ResponseWriter, r *http.Request) 
 	// Close connection after message is sent
 	defer conn.Close()
 
-	packetBytes, err := protobuf.Encode(&Message{data.Text})
+	packetBytes, err := protobuf.Encode(&Message{Text:data.Text})
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)
@@ -98,4 +98,18 @@ func (ws *WebServer) handlePostPeers(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	ws.rumorer.AddPeer(UDPAddr{data.Peer})
+}
+
+func (ws *WebServer) handleGetOrigins(w http.ResponseWriter, r *http.Request) {
+	// Get all origins from the private rumorer, encode them, and return them to the GUI client
+	type respStruct struct{ Origins []string `json:"origins"`}
+	origins := ws.privateRumorer.Origins()
+	resp := respStruct{Origins: make([]string, len(origins))}
+	for i, origin := range origins {
+		resp.Origins[i] = origin
+	}
+	err := json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		fmt.Printf("ERROR: could net encode peer: %v\n", err)
+	}
 }

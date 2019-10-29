@@ -1,7 +1,6 @@
 package rumorer
 
 import (
-	"github.com/dedis/protobuf"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"sync"
@@ -17,14 +16,14 @@ type SimpleRumorer struct {
 	messagesMutex sync.RWMutex
 
 	// The rumorer communicates through these channels
-	in   chan *Packet
-	out  chan *Packet
-	uiIn chan *Packet
+	in   chan *AddrGossipPacket
+	out  chan *AddrGossipPacket
+	uiIn chan *Message
 
 	debug bool
 }
 
-func NewSimpleRumorer(addr string, name string, peers *Set, in chan *Packet, out chan *Packet, uiIn chan *Packet, debug bool) *SimpleRumorer {
+func NewSimpleRumorer(addr string, name string, peers *Set, in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, debug bool) *SimpleRumorer {
 	return &SimpleRumorer{
 		addr:     addr,
 		name:     name,
@@ -63,27 +62,16 @@ func (s *SimpleRumorer) Run() {
 			pack := <-s.in
 
 			// Decode the packet
-			gossipPack := GossipPacket{}
-			err := protobuf.Decode(pack.Data, &gossipPack)
-			if err != nil {
-				panic(fmt.Sprintf("ERROR could not decode packet: %v", err))
-			}
-
-			if gossipPack.Simple != nil {
-				go s.handleSimpleMSg(gossipPack.Simple, pack.Addr)
+			if pack.Gossip.Simple != nil {
+				go s.handleSimpleMSg(pack.Gossip.Simple, pack.Address)
 			} // ignore other packets (RumorMessage and StatusPacket)
 		}
 	}()
 
 	go func() {
 		for {
-			pack := <-s.uiIn
-			msg := Message{}
-			err := protobuf.Decode(pack.Data, &msg)
-			if err != nil {
-				panic(fmt.Sprintf("ERROR could not decode packet: %v", err))
-			}
-			go s.handleClientMsg(&msg)
+			msg := <-s.uiIn
+			go s.handleClientMsg(msg)
 		}
 	}()
 }
@@ -147,12 +135,6 @@ func (s *SimpleRumorer) handleClientMsg(msg *Message) {
 }
 
 func (s *SimpleRumorer) Send(gossip *GossipPacket, addr UDPAddr) {
-	// Encode the message
-	bytes, err := protobuf.Encode(gossip)
-	if err != nil {
-		panic(fmt.Sprintf("ERROR could not encode packet: %v", err))
-	}
-
 	// Send it into the outgoing communication channel
-	s.out <- &Packet{addr, bytes}
+	s.out <- &AddrGossipPacket{addr, gossip}
 }

@@ -12,12 +12,15 @@ import (
 var (
 	UIPort string
 	msg    string
+	dest   string
 )
 
 func main() {
 	// Load command line arguments
 	flag.StringVar(&UIPort, "UIPort", "8080", "port for the UI client (default '8080'")
-	flag.StringVar(&msg, "msg", "", "message to be sent")
+	flag.StringVar(&msg, "msg", "", "message to be sent; if the -dest flag is present, " +
+		"this is a private message, otherwise it’s a rumor message")
+	flag.StringVar(&dest, "dest", "", "destination for the private message; can be omitted")
 	flag.Parse()
 
 	// Send message to the Gossiper
@@ -36,7 +39,11 @@ func SendMsg(addr string) {
 	defer conn.Close()
 
 	// Encode the message
-	packetBytes, err := protobuf.Encode(&Message{msg})
+	message := Message{Text: msg}
+	if dest != "" {
+		message.Destination = &dest
+	}
+	packetBytes, err := protobuf.Encode(&message)
 	if err != nil {
 		fmt.Printf("ERROR: Could not serialize message\n")
 		fmt.Println(err)

@@ -1,18 +1,20 @@
 package gossiper
 
 import (
+	. "github.com/thomashlvt/Peerster/privateRumorer"
 	. "github.com/thomashlvt/Peerster/rumorer"
-	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	. "github.com/thomashlvt/Peerster/web"
 )
 
 type Gossiper struct {
-	UIServer     *Server
-	GossipServer *Server
+	Dispatcher * Dispatcher
+
 	WebServer    *WebServer
 
 	Rumorer GenericRumorer
+
+	PrivateRumorer *PrivateRumorer
 
 	name string
 
@@ -20,36 +22,46 @@ type Gossiper struct {
 	debug bool
 }
 
-func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string, debug bool, antiEntropy int) *Gossiper {
-	// Networking connections
-	uiServer := NewServer("127.0.0.1:" + uiPort)
-	gossipServer := NewServer(gossipAddr)
+func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string,
+	             debug bool, antiEntropy int, routeRumoringTimeout int) *Gossiper {
+	// Create the dispatcher
+	disp := NewDispatcher(uiPort, gossipAddr)
+
+	// Both the rumorer and private rumorer get a pointer to this value
+	// as they both need to access it
+	// TODO: mutex for this?
+	var id uint32
+	id = 1
 
 	// Create the simple/normal rumorer
 	var rumorer GenericRumorer
 	if simple {
-		rumorer = NewSimpleRumorer(gossipAddr, name, peers, gossipServer.Ingress(), gossipServer.Outgress(), uiServer.Ingress(), debug)
+		rumorer = NewSimpleRumorer(gossipAddr, name, peers, disp.RumorerGossipIn, disp.RumorerOut, disp.RumorerUIIn, debug)
 	} else {
-		rumorer = NewRumorer(name, peers, gossipServer.Ingress(), gossipServer.Outgress(), uiServer.Ingress(), uiServer.Outgress(), debug, antiEntropy)
+		rumorer = NewRumorer(name, peers, &id, disp.RumorerGossipIn, disp.RumorerOut, disp.RumorerUIIn, debug, antiEntropy)
 	}
 
+	// Create the rumorer for private messages
+	privateRumorer := NewPrivateRumorer(name, peers, &id, disp.PrivateRumorerGossipIn, disp.PrivateRumorerUIIn,
+		                                disp.PrivateRumorerGossipOut, disp.RumorerUIIn, routeRumoringTimeout, gossipAddr, debug)
+
 	// Create the webserver for interacting with the rumorer
-	webServer := NewWebServer(rumorer, uiPort)
+	webServer := NewWebServer(rumorer, privateRumorer, uiPort)
 
 	return &Gossiper{
-		UIServer:     uiServer,
-		GossipServer: gossipServer,
+		Dispatcher:   disp,
 		WebServer:    webServer,
 		Rumorer:      rumorer,
+		PrivateRumorer: privateRumorer,
 		name:         name,
 		debug:        debug,
 	}
 }
 
 func (g *Gossiper) Run() {
-	g.UIServer.Run()
-	g.GossipServer.Run()
+	g.Dispatcher.Run()
 	g.Rumorer.Run()
+	g.PrivateRumorer.Run()
 	if g.WebServer != nil {
 		g.WebServer.Run()
 	}

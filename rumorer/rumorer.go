@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"fmt"
-	"github.com/dedis/protobuf"
 	"time"
 )
 
@@ -20,13 +19,12 @@ type Rumorer struct {
 	mongeringWith map[UDPAddr]*RumorMessage
 
 	// ID the next message created by this peer will get
-	ID uint32
+	idPtr *uint32
 
 	// The rumorer communicates through these channels
-	in    chan *Packet
-	out   chan *Packet
-	uiIn  chan *Packet
-	uiOut chan *Packet
+	in    chan *AddrGossipPacket
+	out   chan *AddrGossipPacket
+	uiIn  chan *Message
 
 	// State of this peer, this contains the vector clock and messages
 	state *State
@@ -44,18 +42,17 @@ type Rumorer struct {
 	debug bool
 }
 
-func NewRumorer(name string, peers *Set,
-	in chan *Packet, out chan *Packet, uiIn chan *Packet, uiOut chan *Packet, debug bool, antiEntropy int) *Rumorer {
+func NewRumorer(name string, peers *Set, idPtr *uint32,
+	in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, debug bool, antiEntropy int) *Rumorer {
 
 	return &Rumorer{
 		name:              name,
 		peers:             peers,
 		mongeringWith:     make(map[UDPAddr]*RumorMessage),
-		ID:                1,
+		idPtr:             idPtr,
 		in:                in,
 		out:               out,
 		uiIn:              uiIn,
-		uiOut:             uiOut,
 		state:             NewState(out, debug),
 		ackChans:          make(map[UDPAddr] map [msgID] chan bool),
 		ackChansMutex:     &sync.RWMutex{},
@@ -81,106 +78,91 @@ func (r *Rumorer) AddPeer(peer UDPAddr) {
 	r.peers.Add(peer)
 }
 
+func (r *Rumorer) runClient() {
+	for {
+		// Wait for and process incoming packets from the client
+		msg := <-r.uiIn
+		fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
+		fmt.Printf("PEERS %s\n", r.peers)
+
+		// Create a new rumor message, and pass it to the rumor handler
+		rumor := &RumorMessage{
+			Origin: r.name,
+			ID:     *r.idPtr,
+			Text:   msg.Text,
+		}
+		*r.idPtr += 1
+		go r.handleRumor(rumor, UDPAddr{})
+	}
+}
+
+
 func (r *Rumorer) Run() {
-	go func() {
-		for {
-			// Wait for and process incoming packets from the client
-			pack := <-r.uiIn
-			go r.uiIngress(pack.Data, pack.Addr)
-		}
-	}()
-
-	go func() {
-		for {
-			// Wait for and process incoming packets from other peers
-			pack := <-r.in
-			go r.gossipIngress(pack.Data, pack.Addr)
-		}
-	}()
-
-	go func() {
-		for {
-			// Run anti-entropy every `antiEntropyTimout` seconds
-			go r.antiEntropy()
-
-			timer := time.NewTicker(r.antiEntropyTimout)
-			<-timer.C
-		}
-	}()
+	go r.runClient()
+	go r.runPeer()
+	go r.runAntiEntropy()
 }
 
-func (r *Rumorer) antiEntropy() {
-	if r.debug {
-		fmt.Printf("[DEBUG] running antientropy\n")
-	}
-	// Send StatusPacket to a random peer
-	randPeer, ok := r.peers.Rand()
-	if ok {
-		r.state.Send(randPeer)
+func (r *Rumorer) runPeer() {
+	for {
+		// Wait for and process incoming packets from other peers
+		packet := <-r.in
+		go func() {
+			gossip := packet.Gossip
+			address := packet.Address
+
+			// Dispatch packet according to type
+			if gossip.Rumor != nil {
+				msg := gossip.Rumor
+
+				// Expand peers list
+				r.peers.Add(address)
+
+				// Print logging info
+				if msg.Text != "" {
+					fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n", msg.Origin, address, msg.ID, msg.Text)
+					fmt.Printf("PEERS %v\n", r.peers)
+				}
+
+				r.handleRumor(msg, address)
+
+			} else if gossip.Status != nil {
+				msg := gossip.Status
+
+				// Expand peers list
+				r.peers.Add(address)
+
+				// Print logging info
+				fmt.Printf("STATUS from %v ", address)
+				for _, entry := range msg.Want {
+					fmt.Printf("peer %v nextID %v ", entry.Identifier, entry.NextID)
+				}
+				fmt.Printf("\n")
+				fmt.Printf("PEERS %v\n", r.peers)
+
+				go r.handleStatus(msg, address)
+			} // Ignore SimpleMessage
+		}()
 	}
 }
 
-func (r *Rumorer) uiIngress(data []byte, address UDPAddr) {
-	// All messages received from the client, get processed here
+func (r *Rumorer) runAntiEntropy() {
+	for {
+		// Run anti-entropy every `antiEntropyTimout` seconds
+		go func() {
+			if r.debug {
+				fmt.Printf("[DEBUG] running antientropy\n")
+			}
+			// Send StatusPacket to a random peer
+			randPeer, ok := r.peers.Rand()
+			if ok {
+				r.state.Send(randPeer)
+			}
+		}()
 
-	// Decode the message
-	msg := Message{}
-	err := protobuf.Decode(data, &msg)
-	if err != nil {
-		panic(fmt.Sprintf("ERROR when decoding packet: %v", err))
+		timer := time.NewTicker(r.antiEntropyTimout)
+		<-timer.C
 	}
-
-	fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
-	fmt.Printf("PEERS %s\n", r.peers)
-
-	// Create a new rumor message, and pass it to the rumor handler
-	rumor := &RumorMessage{
-		Origin: r.name,
-		ID:     r.ID,
-		Text:   msg.Text,
-	}
-	r.ID += 1
-	r.handleRumor(rumor, UDPAddr{})
-}
-
-func (r *Rumorer) gossipIngress(data []byte, address UDPAddr) {
-	// All packets received from other peers get processed here
-
-	// Decode the packet
-	packet := GossipPacket{}
-	err := protobuf.Decode(data, &packet)
-	if err != nil {
-		panic(fmt.Sprintf("ERROR when decoding packet: %v", err))
-	}
-
-	// Dispatch packet according to type
-	if packet.Rumor != nil {
-		msg := packet.Rumor
-
-		// Expand peers list
-		r.peers.Add(address)
-
-		// Print logging info
-		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n", msg.Origin, address, msg.ID, msg.Text)
-		fmt.Printf("PEERS %v\n", r.peers)
-
-		r.handleRumor(msg, address)
-	} else if packet.Status != nil {
-		msg := packet.Status
-
-		// Expand peers list
-		r.peers.Add(address)
-
-		// Print logging info
-		fmt.Printf("STATUS from %v ", address)
-		for _, entry := range msg.Want {
-			fmt.Printf("peer %v nextID %v ", entry.Identifier, entry.NextID)
-		}
-		fmt.Printf("\n")
-		fmt.Printf("PEERS %v\n", r.peers)
-
-		r.handleStatus(msg, address)
-	} // Ignore SimpleMessage
 }
 
 func (r *Rumorer) startMongering(msg *RumorMessage, except UDPAddr, coinFlip bool) {
@@ -326,11 +308,6 @@ func (r *Rumorer) sendRumorWait(msg *RumorMessage, to UDPAddr) bool {
 }
 
 func (r *Rumorer) send(packet *GossipPacket, addr UDPAddr) {
-	// Encode and send a gossip packet
-	bytes, err := protobuf.Encode(packet)
-	if err != nil {
-		panic(fmt.Sprintf("ERROR could not encode packet: %v", err))
-	}
-
-	r.out <- &Packet{addr, bytes}
+	// Send gossip packet to addr
+	r.out <- &AddrGossipPacket{addr, packet}
 }

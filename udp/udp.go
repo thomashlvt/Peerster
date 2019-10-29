@@ -24,7 +24,7 @@ func (a UDPAddr) String() string {
 }
 
 // These packets are used to send Data bytes to Addr over the in/out communication channels of the server
-type Packet struct {
+type RawPacket struct {
 	Addr UDPAddr
 	Data []byte
 }
@@ -32,18 +32,18 @@ type Packet struct {
 // Server that listens on a UDP socket and sends the Packets it receives to the ingress channel, and
 // listens on the outgress channel and sends this data outward through the same UDP socket
 type Server struct {
-	ingress chan *Packet
-	outgress chan *Packet
+	ingress chan *RawPacket
+	outgress chan *RawPacket
 
 	address *net.UDPAddr
 	conn *net.UDPConn
 }
 
-func (s *Server) Ingress() chan *Packet {
+func (s *Server) Ingress() chan *RawPacket {
 	return s.ingress
 }
 
-func (s *Server) Outgress() chan *Packet {
+func (s *Server) Outgress() chan *RawPacket {
 	return s.outgress
 }
 
@@ -54,8 +54,8 @@ func NewServer(addr string) *Server {
 		panic(fmt.Sprintf("ERROR when setting up UDP socket: %v", err))
 	}
 
-	in := make(chan *Packet)
-	out := make(chan *Packet)
+	in := make(chan *RawPacket)
+	out := make(chan *RawPacket)
 
 	return &Server{
 		address: addrRes,
@@ -73,7 +73,7 @@ func (s *Server) Listen() {
 		if err != nil {
 			fmt.Printf("ERROR when reading from connection: %v", err)
 		}
-		s.ingress <- &Packet{UDPAddr{addr.String()},buffer[:n]}
+		s.ingress <- &RawPacket{UDPAddr{addr.String()},buffer[:n]}
 	}
 }
 

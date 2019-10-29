@@ -2,7 +2,6 @@ package rumorer
 
 import (
 	"fmt"
-	"github.com/dedis/protobuf"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"sync"
@@ -18,12 +17,12 @@ type State struct {
 	messagesMutex *sync.RWMutex
 
 	// Outgoing communication channel to send StatePackets
-	out chan *Packet
+	out chan *AddrGossipPacket
 
 	debug bool
 }
 
-func NewState(out chan *Packet, debug bool) *State {
+func NewState(out chan *AddrGossipPacket, debug bool) *State {
 	return &State{
 		state:         make(map[string]uint32),
 		stateMutex:    &sync.RWMutex{},
@@ -154,12 +153,7 @@ func (s *State) Send(addr UDPAddr) {
 		want = append(want, PeerStatus{origin, next})
 	}
 
-	// Encode the packet
-	bytes, err := protobuf.Encode(&GossipPacket{Status: &StatusPacket{Want: want}})
-	if err != nil {
-		panic(fmt.Sprintf("ERROR could not encode packet: %v", err))
-	}
-
 	// Send it on the outgoing communication channel
-	s.out <- &Packet{addr, bytes}
+	gossip := GossipPacket{Status: &StatusPacket{Want: want}}
+	s.out <- &AddrGossipPacket{addr, &gossip}
 }

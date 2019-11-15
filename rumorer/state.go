@@ -38,7 +38,10 @@ func (s *State) Messages() []*RumorMessage {
 	res := make([]*RumorMessage, 0)
 	for _, msgs := range s.messages {
 		for _, v := range msgs {
-			res = append(res, v)
+			if v.Text != "" { // Don't include the route rumors
+				res = append(res, v)
+
+			}
 		}
 	}
 	return res
@@ -75,7 +78,7 @@ func (s *State) Compare(msg *StatusPacket) (iHave *PeerStatus, youHave *PeerStat
 			// I am in front
 			iHave = &PeerStatus{
 				Identifier: entry.Identifier,
-				NextID:     entry.NextID,  // This is the ID of the message I should send
+				NextID:     entry.NextID, // This is the ID of the message I should send
 			}
 			if s.debug {
 				fmt.Printf("[DEBUG] CompareStatus: I AM IN FRONT\n")
@@ -85,7 +88,7 @@ func (s *State) Compare(msg *StatusPacket) (iHave *PeerStatus, youHave *PeerStat
 			// He is in front
 			youHave = &PeerStatus{
 				Identifier: entry.Identifier,
-				NextID:     nextID,  // This is the ID of the message I want
+				NextID:     nextID, // This is the ID of the message I want
 			}
 			if s.debug {
 				fmt.Printf("[DEBUG] CompareStatus: HE IS IN FRONT\n")
@@ -98,7 +101,7 @@ func (s *State) Compare(msg *StatusPacket) (iHave *PeerStatus, youHave *PeerStat
 		if !origins[origin] {
 			iHave = &PeerStatus{
 				Identifier: origin,
-				NextID:     1,  // This is the ID of the message I have
+				NextID:     1, // This is the ID of the message I have
 			}
 			if s.debug {
 				fmt.Printf("[DEBUG] CompareStatus: I AM IN FRONT\n")

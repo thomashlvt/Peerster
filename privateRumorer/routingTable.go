@@ -7,15 +7,15 @@ import (
 )
 
 type RoutingTable struct {
-	lock *sync.RWMutex
-	table map[string]UDPAddr
+	lock      *sync.RWMutex
+	table     map[string]UDPAddr
 	recentIDs map[string]uint32
 }
 
 func NewRoutingTable() *RoutingTable {
 	return &RoutingTable{
-		lock: &sync.RWMutex{},
-		table: make(map[string]UDPAddr),
+		lock:      &sync.RWMutex{},
+		table:     make(map[string]UDPAddr),
 		recentIDs: make(map[string]uint32),
 	}
 }
@@ -44,6 +44,7 @@ func (rt *RoutingTable) Add(origin string, addr UDPAddr, id uint32, printDSDV bo
 
 	// Update entry
 	if !exists || id > prevId {
+
 		rt.recentIDs[origin] = id
 		if printDSDV {
 			fmt.Printf("DSDV %s %s\n", origin, addr)
@@ -52,14 +53,14 @@ func (rt *RoutingTable) Add(origin string, addr UDPAddr, id uint32, printDSDV bo
 	}
 }
 
-func (rt *RoutingTable) Get(origin string) UDPAddr {
+func (rt *RoutingTable) Get(origin string) (UDPAddr, bool) {
 	// Thread safe access to the routing table
 	rt.lock.RLock()
 	defer rt.lock.RUnlock()
 
 	if res, ok := rt.table[origin]; ok {
-		return res
+		return res, true
 	} else {
-		return UDPAddr{}
+		return UDPAddr{}, false
 	}
 }

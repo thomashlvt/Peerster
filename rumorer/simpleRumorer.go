@@ -9,10 +9,10 @@ import (
 )
 
 type SimpleRumorer struct {
-	addr     string
-	name     string
-	peers    *Set
-	messages []*RumorMessage
+	addr          string
+	name          string
+	peers         *Set
+	messages      []*RumorMessage
 	messagesMutex sync.RWMutex
 
 	// The rumorer communicates through these channels
@@ -21,19 +21,23 @@ type SimpleRumorer struct {
 	uiIn chan *Message
 
 	debug bool
+	hw1   bool
+	hw2   bool
 }
 
-func NewSimpleRumorer(addr string, name string, peers *Set, in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, debug bool) *SimpleRumorer {
+func NewSimpleRumorer(addr string, name string, peers *Set, in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, debug bool, hw1 bool, hw2 bool) *SimpleRumorer {
 	return &SimpleRumorer{
-		addr:     addr,
-		name:     name,
-		peers:    peers,
-		messages: make([]*RumorMessage, 0),
+		addr:          addr,
+		name:          name,
+		peers:         peers,
+		messages:      make([]*RumorMessage, 0),
 		messagesMutex: sync.RWMutex{},
-		in:       in,
-		out:      out,
-		uiIn:     uiIn,
-		debug:    debug,
+		in:            in,
+		out:           out,
+		uiIn:          uiIn,
+		debug:         debug,
+		hw1:           hw1,
+		hw2:           hw2,
 	}
 }
 
@@ -53,6 +57,10 @@ func (s *SimpleRumorer) Peers() []UDPAddr {
 
 func (s *SimpleRumorer) AddPeer(peer UDPAddr) {
 	s.peers.Add(peer)
+}
+
+func (s *SimpleRumorer) UIIn() chan *Message {
+	return s.uiIn
 }
 
 func (s *SimpleRumorer) Run() {
@@ -82,14 +90,16 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 	// Store relay in set of known peers
 	s.peers.Add(UDPAddr{Addr: msg.RelayPeerAddr})
 
-	fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
-		msg.OriginalName, msg.RelayPeerAddr, msg.Contents)
-	fmt.Printf("PEERS %s\n", s.peers)
+	if s.hw1 {
+		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
+			msg.OriginalName, msg.RelayPeerAddr, msg.Contents)
+		fmt.Printf("PEERS %s\n", s.peers)
+	}
 
 	// Save message
 	s.messages = append(s.messages, &RumorMessage{
 		Origin: msg.OriginalName,
-		ID:     uint32(len(s.messages)+1), // for the GUI to see the messages as unique
+		ID:     uint32(len(s.messages) + 1), // for the GUI to see the messages as unique
 		Text:   msg.Contents,
 	})
 
@@ -110,13 +120,15 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 
 func (s *SimpleRumorer) handleClientMsg(msg *Message) {
 	s.messagesMutex.Lock()
-	fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
-	fmt.Printf("PEERS %s\n", s.peers)
+	if s.hw1 {
+		fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
+		fmt.Printf("PEERS %s\n", s.peers)
+	}
 
 	// Save message
 	s.messages = append(s.messages, &RumorMessage{
 		Origin: s.addr,
-		ID:     uint32(len(s.messages)+1), // for the GUI to see the messages as unique
+		ID:     uint32(len(s.messages) + 1), // for the GUI to see the messages as unique
 		Text:   msg.Text,
 	})
 

@@ -28,11 +28,37 @@
         <div>
             Peer:<br>
             <input type="textbox" name="peer" id="add-peer-content" value="<host>:<port>"><br>
-            <button id="add-peer-button">Send</button>
+            <button id="add-peer-button">Add</button>
         </div>
         <h2>Origins</h2>
         <ul id="dsdv-origins">
             <!-- AJAX content will load here -->
         </ul>
+        <h2><div id="private-origin">Select an origin above to see private messages<!-- AJAX content will load here --></div></h2>
+        <ul id="private-messages">
+            <!-- AJAX content will load here -->
+        </ul>
+        <div id="send-private-message" style="display:none">
+            Send a private message:<br>
+            <input type="textbox" name="private-message-content" id="send-private-message" value="Your Private Message"><br>
+            <button id="private-message-button">Send to peer</button>
+        </div>
+        <h2>Share Files</h2>
+        <div>
+            <select id="select-file">
+                <!-- To be filled in -->
+            </select>
+            <button id="share-file-button">Share a file</button>
+        </div>
+        <h2>Download Files</h2>
+        <div>
+            Metahash:<br>
+            <input type="textbox" name="file-hash" id="file-hash" value=""><br>
+            Origin:<br>
+            <input type="textbox" name="file-origin" id="file-origin" value=""><br>
+            File Name:<br>
+            <input type="textbox" name="file-name" id="download-file-name" value=""><br>
+            <button id="download-file-button">Download</button>
+        </div>
     </body>
 </html>

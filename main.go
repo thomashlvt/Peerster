@@ -14,14 +14,17 @@ import (
 
 var (
 	// The variables below will be filled in by the CLI arguments
-	uiPort      string
-	gossipAddr  string
-	name        string
-	peers       string
-	simple      bool
-	debug       bool
-	antiEntropy int
+	uiPort        string
+	gossipAddr    string
+	name          string
+	peers         string
+	simple        bool
+	debug         bool
+	antiEntropy   int
 	routeRumoring int
+
+	disableHw1 bool
+	disableHw2 bool
 )
 
 func main() {
@@ -34,7 +37,7 @@ func main() {
 	flag.BoolVar(&simple, "simple", false, "run gossiper in simple broadcast mode")
 	flag.BoolVar(&debug, "debug", false, "print debug information")
 	flag.IntVar(&antiEntropy, "antiEntropy", 10, "Timeout for running anti entropy")
-	flag.IntVar(&routeRumoring, "rtimer", 0, "Timeout in seconds to send route rumors. 0 (default) " +
+	flag.IntVar(&routeRumoring, "rtimer", 0, "Timeout in seconds to send route rumors. 0 (default) "+
 		"means disable sending route rumors.")
 	flag.Parse()
 
@@ -52,12 +55,14 @@ func main() {
 		}
 	}
 
+	disableHw1 = true
+	disableHw2 = false
+
 	// Initialize and run gossiper
-	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, antiEntropy, routeRumoring)
+	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, antiEntropy, routeRumoring, !disableHw1, !disableHw2)
 	goss.Run()
 
 	// Wait forever
-	select{}
+	select {}
 }
 
-// TODO: Don't print empty messages in GUI

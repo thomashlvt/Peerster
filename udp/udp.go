@@ -5,6 +5,8 @@ import (
 	"net"
 )
 
+const BUFFERSIZE = 10240
+
 // Wrapper type that represents a UDP address
 type UDPAddr struct {
 	Addr string
@@ -32,11 +34,11 @@ type RawPacket struct {
 // Server that listens on a UDP socket and sends the Packets it receives to the ingress channel, and
 // listens on the outgress channel and sends this data outward through the same UDP socket
 type Server struct {
-	ingress chan *RawPacket
+	ingress  chan *RawPacket
 	outgress chan *RawPacket
 
 	address *net.UDPAddr
-	conn *net.UDPConn
+	conn    *net.UDPConn
 }
 
 func (s *Server) Ingress() chan *RawPacket {
@@ -58,9 +60,9 @@ func NewServer(addr string) *Server {
 	out := make(chan *RawPacket)
 
 	return &Server{
-		address: addrRes,
-		conn: ln,
-		ingress: in,
+		address:  addrRes,
+		conn:     ln,
+		ingress:  in,
 		outgress: out,
 	}
 }
@@ -68,19 +70,19 @@ func NewServer(addr string) *Server {
 func (s *Server) Listen() {
 	// Put incoming messages in the ingress channel
 	for {
-		buffer := make([]byte, 4096)
+		buffer := make([]byte, BUFFERSIZE)
 		n, addr, err := s.conn.ReadFromUDP(buffer)
 		if err != nil {
 			fmt.Printf("ERROR when reading from connection: %v", err)
 		}
-		s.ingress <- &RawPacket{UDPAddr{addr.String()},buffer[:n]}
+		s.ingress <- &RawPacket{UDPAddr{addr.String()}, buffer[:n]}
 	}
 }
 
 func (s *Server) Talk() {
 	// Send outgoing messages through the UDP socket
 	for {
-		data := <- s.outgress
+		data := <-s.outgress
 		_, err := s.conn.WriteToUDP(data.Data, data.Addr.Resolve())
 		if err != nil {
 			panic(fmt.Sprintf("ERROR could not send bytes over UDP: %v", err))

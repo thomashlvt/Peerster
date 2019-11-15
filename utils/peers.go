@@ -10,13 +10,13 @@ import (
 
 // A set of UDPAddr, with some useful functions to abstract the management of known peers
 type Set struct {
-	data map[UDPAddr]bool
+	data      map[UDPAddr]bool
 	dataMutex *sync.RWMutex
 }
 
 func NewSet() *Set {
 	return &Set{
-		data: make(map[UDPAddr]bool),
+		data:      make(map[UDPAddr]bool),
 		dataMutex: &sync.RWMutex{},
 	}
 }
@@ -41,7 +41,8 @@ func (s *Set) Contains(el UDPAddr) bool {
 	s.dataMutex.RLock()
 	defer s.dataMutex.RUnlock()
 
-	return s.data[el]
+	_, exists := s.data[el]
+	return exists
 }
 
 func (s *Set) Data() []UDPAddr {
@@ -49,7 +50,7 @@ func (s *Set) Data() []UDPAddr {
 	defer s.dataMutex.RUnlock()
 
 	all := make([]UDPAddr, len(s.data))
-	i:= 0
+	i := 0
 	for peer, _ := range s.data {
 		all[i] = peer
 		i += 1
@@ -92,10 +93,17 @@ func (s *Set) Rand() (UDPAddr, bool) {
 }
 
 func (s *Set) Len() int {
+	s.dataMutex.RLock()
+	defer s.dataMutex.RUnlock()
+
 	return len(s.data)
 }
 
 func (s *Set) RandExcept(except UDPAddr) (UDPAddr, bool) {
+	s.dataMutex.RLock()
+	defer s.dataMutex.RUnlock()
+
+	// No deadlock because these are all read locked
 	if (s.Len() == 1 && s.Contains(except)) || s.Len() == 0 {
 		return UDPAddr{}, false
 	}

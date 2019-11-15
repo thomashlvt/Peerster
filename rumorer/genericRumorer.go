@@ -14,4 +14,5 @@ type GenericRumorer interface {
 	Messages() []*RumorMessage
 	Peers() []UDPAddr
 	AddPeer(addr UDPAddr)
+	UIIn() chan *Message
 }

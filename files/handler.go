@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"io/ioutil"
@@ -13,12 +14,19 @@ import (
 	"time"
 )
 
-const HOPLIMIT = 10
 const TIMEOUT = 30
 
 type chanId struct {
 	origin string
 	hash   [32]byte
+}
+
+type SearchDownload struct {
+	ReplyChan chan bool
+	Hash [32]byte
+	Destination *string
+	Peers [] string
+	Name string
 }
 
 
@@ -30,18 +38,21 @@ type FileHandler struct {
 
 	pointToPointOut chan *AddrGossipPacket
 
+	searchDownloadIn chan *SearchDownload
+
 	downloadsInProgress      map[chanId]chan *DataReply
 	downloadsInProgressMutex *sync.RWMutex
 
+	// Store chunks separately so they can be found more efficiently
+	// TODO: maybe store 'metaChunks' separately
 	chunks      map[[32]byte][]byte
 	chunksMutex *sync.RWMutex
 
-	debug bool
-	hw1   bool
-	hw2   bool
+	files map[[32]byte] *File
+	filesMutex *sync.RWMutex
 }
 
-func NewFileHandler(name string, in chan *AddrGossipPacket, uiIn chan *Message, ptpOut chan *AddrGossipPacket, debug bool, hw1 bool, hw2 bool) *FileHandler {
+func NewFileHandler(name string, in chan *AddrGossipPacket, uiIn chan *Message, ptpOut chan *AddrGossipPacket) *FileHandler {
 	return &FileHandler{
 		name:                     name,
 		in:                       in,
@@ -49,16 +60,24 @@ func NewFileHandler(name string, in chan *AddrGossipPacket, uiIn chan *Message, 
 		pointToPointOut:          ptpOut,
 		downloadsInProgress:      make(map[chanId]chan *DataReply),
 		downloadsInProgressMutex: &sync.RWMutex{},
+		searchDownloadIn:         make(chan *SearchDownload),
 		chunks:                   make(map[[32]byte][]byte),
 		chunksMutex:              &sync.RWMutex{},
-		debug:                    debug,
-		hw1:                      hw1,
-		hw2:                      hw2,
+		files:					  make(map[[32]byte]*File),
+		filesMutex:               &sync.RWMutex{},
 	}
 }
 
 func (fh *FileHandler) UIIn() chan *Message {
 	return fh.uiIn
+}
+
+func (fh *FileHandler) Files() (*map[[32]byte]*File, *sync.RWMutex) {
+	return &fh.files, fh.filesMutex
+}
+
+func (fh *FileHandler) SearchDownloadIn() chan *SearchDownload {
+	return fh.searchDownloadIn
 }
 
 func (fh *FileHandler) Run() {
@@ -77,7 +96,7 @@ func (fh *FileHandler) Run() {
 			case msg := <-fh.in:
 				go func(){
 					if msg.Gossip.DataReply != nil {
-						if fh.debug {
+						if Debug {
 							fmt.Printf("[DEBUG] Dispatching data reply from %s\n", msg.Gossip.DataReply.Origin)
 						}
 						// Dispatch reply to downloads in progress
@@ -90,13 +109,13 @@ func (fh *FileHandler) Run() {
 								fh.downloadsInProgressMutex.RUnlock()
 
 							} else {
-								if fh.debug {
+								if Debug {
 									fmt.Printf("[DEBUG] !! Hash did not check out !! Is data empty? %v\n",
 										len(msg.Gossip.DataReply.Data) == 0)
 								}
 							} // Skip if hash not ok
 						} else {
-							if fh.debug {
+							if Debug {
 								fmt.Printf("[DEBUG] Received data reply from %v outside of download!\n",
 									msg.Gossip.DataReply.Origin)
 							}
@@ -104,11 +123,21 @@ func (fh *FileHandler) Run() {
 						}
 
 					} else if msg.Gossip.DataRequest != nil {
-						if fh.debug {
+						if Debug {
 							fmt.Printf("[DEBUG] Handling data request from %s\n", msg.Gossip.DataRequest.Origin)
 						}
 						go fh.handleDataRequest(msg.Gossip.DataRequest, msg.Address)
 					} // ignore others
+				}()
+			case req := <- fh.searchDownloadIn:
+				go func() {
+					if req.Peers == nil {
+						fh.downloadMetaFile(req.Name, req.Hash, *req.Destination)
+						req.ReplyChan <- true
+					} else {
+						fh.downloadChunks(req.Name, req.Hash, req.Peers)
+						req.ReplyChan <- true
+					}
 				}()
 			}
 		}
@@ -116,11 +145,15 @@ func (fh *FileHandler) Run() {
 }
 
 func (fh *FileHandler) handleNewFile(name string) {
-	fPath := path.Join("_SharedFiles", name)
-	f := NewFile(fPath)
+	f := NewFile(name)
 
 	// Chunk storage is passed to store the chunks
-	f.CreateMeta(&fh.chunks, fh.chunksMutex)
+	f.LoadFromFileSystem(&fh.chunks, fh.chunksMutex)
+
+	// Add chunk to files map
+	fh.filesMutex.Lock()
+	fh.files[f.Hash] = f
+	fh.filesMutex.Unlock()
 }
 
 func (fh *FileHandler) handleDataRequest(req *DataRequest, from UDPAddr) {
@@ -135,42 +168,85 @@ func (fh *FileHandler) handleDataRequest(req *DataRequest, from UDPAddr) {
 	fh.pointToPointOut <- &AddrGossipPacket{UDPAddr{}, repl.ToGossip()}
 }
 
-func (fh *FileHandler) downloadFile(name string, hash [32]byte, from string) {
-	// 1. Request metafile
-	if fh.hw2 {
-		fmt.Printf("DOWNLOADING metafile of %s from %s\n", name, from)
+func (fh *FileHandler) downloadFile(name string, hash [32]byte, peer string) {
+	meta := fh.downloadMetaFile(name, hash, peer)
+	// Download all chunks from the same peer
+	peers := make([]string, len(meta) / 32)
+	for i := 0; i < len(meta) / 32; i++ {
+		peers[i] = peer
 	}
-	meta := fh.downloadChunk(hash, from)
-	if fh.debug {
+	fh.downloadChunks(name, hash, peers)
+}
+
+func (fh *FileHandler) downloadMetaFile(name string, hash [32]byte, peer string) []byte {
+	f := NewFile(name)
+	if HW2 {
+		fmt.Printf("DOWNLOADING metafile of %s from %s\n", name, peer)
+	}
+	meta := fh.downloadChunk(hash, peer)
+	if Debug {
 		fmt.Printf("[DEBUG] got metadata file for %s\n", hex.EncodeToString(hash[:]))
 	}
 
-	//    Store metafile chunk
+	// Store metafile chunk
 	fh.chunksMutex.Lock()
 	fh.chunks[hash] = meta
 	fh.chunksMutex.Unlock()
 
-	// 2. Download each data chunk serially
-	chunks := make([]byte, 0)
-	for i := 0; i < len(meta)/32; i += 1 {
-		chunkHash := To32Byte(meta[i*32 : (i+1)*32])
-		if fh.hw2 {
-			fmt.Printf("DOWNLOADING %s chunk %d from %s\n", name, i, from)
+	// Add metadata to file
+	f.loadMeta(meta, hash)
+
+	// Add file to 'known' files: this should only be done when we have the metadata
+	fh.filesMutex.Lock()
+	fh.files[hash] = f
+	fh.filesMutex.Unlock()
+
+	return meta
+}
+
+
+func (fh *FileHandler) downloadChunks(name string, hash [32]byte, peers []string) {
+
+	fmt.Printf("Downloading chunks\n")
+	fh.filesMutex.RLock()
+	f, exists := fh.files[hash]
+	if !exists {
+		if Debug {
+			fmt.Printf("[DEBUG] Warning: metafile %v not found, skipping...\n", hex.EncodeToString(hash[:]))
 		}
-		chunk := fh.downloadChunk(chunkHash, from)
+		fh.filesMutex.RUnlock()
+		return
+	}
+
+	fh.filesMutex.RUnlock()
+
+	// TODO: f is being changed but not locked
+	// TODO: maybe use concurrent map type?
+
+	// Download each data chunk serially
+	chunks := make([]byte, 0)
+	for i := 0; i < int(f.NumChunks); i += 1 {
+		chunkHash := f.meta[i]
+		if HW2 {
+			fmt.Printf("DOWNLOADING %s chunk %d from %s\n", name, i, peers[i])
+		}
+		chunk := fh.downloadChunk(chunkHash, peers[i])
 		chunks = append(chunks, chunk...)
 
 		fh.chunksMutex.Lock()
 		fh.chunks[chunkHash] = chunk
 		fh.chunksMutex.Unlock()
+
+		// Mark chunk as 'known'
+		f.ChunkMap = append(f.ChunkMap, uint64(i+1))
 	}
 
-	// 3. Write download to file
+	// Write download to file
 	err := ioutil.WriteFile(path.Join("_Downloads", name), chunks, 0755)
 	if err != nil {
 		log.Fatalf("Could not write download to file: %s\n", err)
 	}
-	if fh.hw2 {
+	if HW2 {
 		fmt.Printf("RECONSTRUCTED file %s\n", name)
 	}
 }
@@ -183,7 +259,8 @@ func (fh *FileHandler) downloadChunk(hash [32]byte, from string) []byte {
 
 	 // If exists there is a 2nd channel that is downloading the same chunk from the same peer
 	 // We will now be listening, and will notify the other peer
-	 fh.downloadsInProgress[chanId{from, hash}] = replyChan
+	 fh.downloadsInProgress[chanId{from,
+	 	hash}] = replyChan
 	fh.downloadsInProgressMutex.Unlock()
 
 	req := &DataRequest{
@@ -195,10 +272,6 @@ func (fh *FileHandler) downloadChunk(hash [32]byte, from string) []byte {
 
 	for {
 		fh.pointToPointOut <- &AddrGossipPacket{UDPAddr{}, req.ToGossip()}
-
-		if fh.debug {
-			fmt.Printf("[DEBUG] Requested metafile %s\n", hex.EncodeToString(hash[:]))
-		}
 
 		timer := time.NewTicker(TIMEOUT * time.Second)
 		select {
@@ -221,13 +294,14 @@ func (fh *FileHandler) downloadChunk(hash [32]byte, from string) []byte {
 	}
 }
 
+
 func (fh *FileHandler) getChunk(hash [32]byte) []byte {
 	fh.chunksMutex.RLock()
 	defer fh.chunksMutex.RUnlock()
 	res, ok := fh.chunks[hash]
 	if !ok {
-		if fh.debug {
-			fmt.Print("[DEBUG] Chunk requested that we don't have!")
+		if Debug {
+			fmt.Printf("[DEBUG] Chunk requested that we don't have!\n")
 		}
 		return nil
 	} else {
@@ -236,17 +310,20 @@ func (fh *FileHandler) getChunk(hash [32]byte) []byte {
 }
 
 
-func (fh *FileHandler) GetFilesFromFilesystem() []string {
-	// Helper method go get possible files to be shared
+func GetFilesFromFilesystem() []string {
+	// Helper function to list files in _SharedFiles directory
+
 	files, err := ioutil.ReadDir("_SharedFiles")
 	if err != nil {
 		log.Fatal(err)
 	}
-	res := make([]string, 0)
-	for _, f := range files {
+
+	res := make([]string, len(files))
+	for i, f := range files {
 		if !f.IsDir() {
-			res = append(res, f.Name())
+			res[i] = f.Name()
 		}
 	}
+
 	return res
 }

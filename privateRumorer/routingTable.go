@@ -2,6 +2,7 @@ package privateRumorer
 
 import (
 	"fmt"
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	"sync"
 )
@@ -46,7 +47,7 @@ func (rt *RoutingTable) Add(origin string, addr UDPAddr, id uint32, printDSDV bo
 	if !exists || id > prevId {
 
 		rt.recentIDs[origin] = id
-		if printDSDV {
+		if printDSDV && HW2 {
 			fmt.Printf("DSDV %s %s\n", origin, addr)
 		}
 		rt.table[origin] = addr

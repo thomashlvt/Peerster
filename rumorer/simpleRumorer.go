@@ -1,6 +1,7 @@
 package rumorer
 
 import (
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"sync"
@@ -19,13 +20,9 @@ type SimpleRumorer struct {
 	in   chan *AddrGossipPacket
 	out  chan *AddrGossipPacket
 	uiIn chan *Message
-
-	debug bool
-	hw1   bool
-	hw2   bool
 }
 
-func NewSimpleRumorer(addr string, name string, peers *Set, in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, debug bool, hw1 bool, hw2 bool) *SimpleRumorer {
+func NewSimpleRumorer(addr string, name string, peers *Set, in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message) *SimpleRumorer {
 	return &SimpleRumorer{
 		addr:          addr,
 		name:          name,
@@ -35,9 +32,6 @@ func NewSimpleRumorer(addr string, name string, peers *Set, in chan *AddrGossipP
 		in:            in,
 		out:           out,
 		uiIn:          uiIn,
-		debug:         debug,
-		hw1:           hw1,
-		hw2:           hw2,
 	}
 }
 
@@ -90,7 +84,7 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 	// Store relay in set of known peers
 	s.peers.Add(UDPAddr{Addr: msg.RelayPeerAddr})
 
-	if s.hw1 {
+	if HW1 {
 		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
 			msg.OriginalName, msg.RelayPeerAddr, msg.Contents)
 		fmt.Printf("PEERS %s\n", s.peers)
@@ -120,7 +114,7 @@ func (s *SimpleRumorer) handleSimpleMSg(msg *SimpleMessage, addr UDPAddr) {
 
 func (s *SimpleRumorer) handleClientMsg(msg *Message) {
 	s.messagesMutex.Lock()
-	if s.hw1 {
+	if HW1 {
 		fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
 		fmt.Printf("PEERS %s\n", s.peers)
 	}

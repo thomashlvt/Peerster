@@ -1,6 +1,7 @@
 package rumorer
 
 import (
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"math/rand"
@@ -10,7 +11,7 @@ import (
 	"time"
 )
 
-const ACKTIMEOUT = 10
+const ACKTIMEOUT = 2
 
 type msgID struct {
 	origin string
@@ -44,14 +45,10 @@ type Rumorer struct {
 
 	// Interval between anti-entropy runs
 	antiEntropyTimout time.Duration
-
-	debug bool
-	hw1   bool
-	hw2   bool
 }
 
 func NewRumorer(name string, peers *Set,
-	in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, debug bool, antiEntropy int, hw1 bool, hw2 bool) *Rumorer {
+	in chan *AddrGossipPacket, out chan *AddrGossipPacket, uiIn chan *Message, antiEntropy int) *Rumorer {
 
 	return &Rumorer{
 		name:              name,
@@ -62,14 +59,11 @@ func NewRumorer(name string, peers *Set,
 		in:                in,
 		out:               out,
 		uiIn:              uiIn,
-		state:             NewState(out, debug),
+		state:             NewState(out),
 		ackChans:          make(map[UDPAddr]map[msgID]chan bool),
 		ackChansMutex:     &sync.RWMutex{},
 		timeout:           time.Second * ACKTIMEOUT,
 		antiEntropyTimout: time.Second * time.Duration(antiEntropy),
-		debug:             debug,
-		hw1:               hw1,
-		hw2:               hw2,
 	}
 }
 
@@ -93,7 +87,8 @@ func (r *Rumorer) runClient() {
 	for {
 		// Wait for and process incoming packets from the client
 		msg := <-r.uiIn
-		if r.hw1 {
+
+		if HW1 && msg.Text != ""{
 			fmt.Printf("CLIENT MESSAGE %s\n", msg.Text)
 			fmt.Printf("PEERS %s\n", r.peers)
 		}
@@ -123,9 +118,8 @@ func (r *Rumorer) Run() {
 }
 
 func (r *Rumorer) runPeer() {
-	for {
-		// Wait for and process incoming packets from other peers
-		packet := <-r.in
+	// Wait for and process incoming packets from other peers
+	for packet := range r.in {
 		go func() {
 			gossip := packet.Gossip
 			address := packet.Address
@@ -138,7 +132,7 @@ func (r *Rumorer) runPeer() {
 				r.peers.Add(address)
 
 				// Print logging info
-				if r.hw1 && msg.Text != "" {
+				if HW1 && msg.Text != "" {
 					fmt.Printf("PEERS %v\n", r.peers)
 				}
 
@@ -151,16 +145,18 @@ func (r *Rumorer) runPeer() {
 				r.peers.Add(address)
 
 				// Print logging info
-				if r.hw1 {
-					fmt.Printf("STATUS from %v ", address)
+				if HW1 {
+					toPrint := ""
+					toPrint += fmt.Sprintf("STATUS from %v ", address)
 					for _, entry := range msg.Want {
-						fmt.Printf("peer %v nextID %v ", entry.Identifier, entry.NextID)
+						toPrint += fmt.Sprintf("peer %v nextID %v ", entry.Identifier, entry.NextID)
 					}
-					fmt.Printf("\n")
-					fmt.Printf("PEERS %v\n", r.peers)
+					toPrint += fmt.Sprintf("\n")
+					toPrint += fmt.Sprintf("PEERS %v\n", r.peers)
+					fmt.Printf(toPrint)
 				}
 
-				go r.handleStatus(msg, address)
+				r.handleStatus(msg, address)
 			} // Ignore SimpleMessage
 		}()
 	}
@@ -170,7 +166,7 @@ func (r *Rumorer) runAntiEntropy() {
 	for {
 		// Run anti-entropy every `antiEntropyTimout` seconds
 		go func() {
-			if r.debug {
+			if Debug {
 				fmt.Printf("[DEBUG] running antientropy\n")
 			}
 			// Send StatusPacket to a random peer
@@ -189,8 +185,8 @@ func (r *Rumorer) startMongering(msg *RumorMessage, except UDPAddr, coinFlip boo
 	if coinFlip {
 		// Flip a coin: heads -> don't start mongering
 		if rand.Int()%2 == 0 {
-			if r.debug {
-				fmt.Println("FLIPPED COIN: nope")
+			if Debug {
+				fmt.Println("[DEBUG] FLIPPED COIN: nope")
 			}
 			return
 		}
@@ -202,7 +198,7 @@ func (r *Rumorer) startMongering(msg *RumorMessage, except UDPAddr, coinFlip boo
 		randPeer, okRand := r.peers.RandExcept(except)
 		if okRand {
 			if coinFlip && first { // Only print FLIPPED COIN the first try, the coin was only flipped once...
-				if r.hw1 {
+				if HW1 || Debug {
 					fmt.Printf("FLIPPED COIN sending rumor to %v\n", randPeer)
 				}
 				first = false
@@ -211,7 +207,7 @@ func (r *Rumorer) startMongering(msg *RumorMessage, except UDPAddr, coinFlip boo
 			// Start mongering with this peer
 			r.mongeringWithMutex.Lock()
 			r.mongeringWith[randPeer] = msg
-			if r.hw1 {
+			if HW1 {
 				fmt.Printf("MONGERING with %v\n", randPeer)
 			}
 			r.mongeringWithMutex.Unlock()
@@ -240,7 +236,7 @@ func (r *Rumorer) handleRumor(msg *RumorMessage, sender UDPAddr) {
 	}
 
 	if accepted {
-		if r.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] RUMOR accepted\n")
 		}
 		// Start mongering the message
@@ -263,13 +259,14 @@ func (r *Rumorer) handleStatus(msg *StatusPacket, sender UDPAddr) {
 	}
 	r.ackChansMutex.RUnlock()
 
+
 	// Compare the received state to our state
 	iHave, youHave := r.state.Compare(msg)
 
 	if iHave != nil {
 		// I have a message he wants: send this message
 		toSend := r.state.Message(iHave.Identifier, iHave.NextID)
-		if r.hw1 || r.hw2 {
+		if HW1 || HW2 {
 			// We're actually not, but this is needed as output to indicate that we sent a rumor message
 			fmt.Printf("MONGERING with %v\n", sender)
 		}
@@ -280,7 +277,7 @@ func (r *Rumorer) handleStatus(msg *StatusPacket, sender UDPAddr) {
 		r.state.Send(sender)
 	} else {
 		// We are in sync
-		if r.hw1 {
+		if HW1 {
 			fmt.Printf("IN SYNC WITH %v\n", sender)
 		}
 		r.mongeringWithMutex.Lock()
@@ -302,7 +299,7 @@ func (r *Rumorer) sendRumorWait(msg *RumorMessage, to UDPAddr) bool {
 	if _, exists := r.ackChans[to]; !exists {
 		r.ackChans[to] = make(map[msgID]chan bool)
 	}
-	ackChan := make(chan bool)
+	ackChan := make(chan bool, 64) // TODO: vulnerable to DDOS!
 	r.ackChans[to][msgID{msg.Origin, msg.ID}] = ackChan
 	r.ackChansMutex.Unlock()
 
@@ -315,7 +312,7 @@ func (r *Rumorer) sendRumorWait(msg *RumorMessage, to UDPAddr) bool {
 
 	select {
 	case <-timer.C:
-		if r.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] Timeout when waiting for status\n")
 		}
 		// Timed out
@@ -326,7 +323,7 @@ func (r *Rumorer) sendRumorWait(msg *RumorMessage, to UDPAddr) bool {
 		return false
 
 	case <-ackChan: // TODO: safer to check channel is closed!
-		if r.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] Packet confirmed\n")
 		}
 		// Status received

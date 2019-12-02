@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"fmt"
 	. "github.com/thomashlvt/Peerster/udp"
+	. "github.com/thomashlvt/Peerster/constants"
 )
 
 // Definition of all message types
@@ -11,6 +13,8 @@ type Message struct {
 	Destination *string
 	File        *string
 	Request     *[]byte
+	Keywords    *[]string
+	Budget      *uint64
 }
 
 type SimpleMessage struct {
@@ -43,12 +47,14 @@ type StatusPacket struct {
 }
 
 type GossipPacket struct {
-	Simple      *SimpleMessage
-	Rumor       *RumorMessage
-	Status      *StatusPacket
-	Private     *PrivateMessage
+	Simple *SimpleMessage
+	Rumor *RumorMessage
+	Status *StatusPacket
+	Private *PrivateMessage
 	DataRequest *DataRequest
-	DataReply   *DataReply
+	DataReply *DataReply
+	SearchRequest *SearchRequest
+	SearchReply *SearchReply
 }
 
 type AddrGossipPacket struct {
@@ -73,6 +79,26 @@ type DataReply struct {
 	HopLimit    uint32
 	HashValue   []byte
 	Data        []byte
+}
+
+type SearchRequest struct {
+	Origin string
+	Budget uint64
+	Keywords []string
+}
+
+type SearchReply struct {
+	Origin string
+	Destination string
+	HopLimit uint32
+	Results []*SearchResult
+}
+
+type SearchResult struct {
+	FileName string
+	MetafileHash []byte
+	ChunkMap []uint64
+	ChunkCount uint64
 }
 
 // Messages that can be directly sent from peer to peer:
@@ -107,6 +133,13 @@ func (d *DataReply) HopIsZero() bool         { return d.HopLimit == 0 }
 func (d *DataReply) DecrHopLimit()           { d.HopLimit -= 1 }
 func (d *DataReply) ToGossip() *GossipPacket { return &GossipPacket{DataReply: d} }
 
+// Implement the point to point interface for SearchReply
+func (s *SearchReply) GetOrigin() string       { return s.Origin }
+func (s *SearchReply) GetDestination() string  { return s.Destination }
+func (s *SearchReply) HopIsZero() bool         { return s.HopLimit == 0 }
+func (s *SearchReply) DecrHopLimit()           { s.HopLimit -= 1 }
+func (s *SearchReply) ToGossip() *GossipPacket { return &GossipPacket{SearchReply: s} }
+
 // Get point to point message from GossipPacket
 func (g *GossipPacket) ToP2PMessage() PointToPointMessage {
 	if g.Private != nil {
@@ -115,6 +148,8 @@ func (g *GossipPacket) ToP2PMessage() PointToPointMessage {
 		return g.DataRequest
 	} else if g.DataReply != nil {
 		return g.DataReply
+	} else if g.SearchReply != nil {
+		return g.SearchReply
 	} else {
 		return nil
 	}
@@ -122,6 +157,11 @@ func (g *GossipPacket) ToP2PMessage() PointToPointMessage {
 
 // Helper function to convert []byte hashes to [32]byte hashes
 func To32Byte(bs []byte) [32]byte {
+	if len(bs) != 32 {
+		if Debug {
+			fmt.Println("[DEBUG] Warning: To32Byte is transforming byte slice with len != 32")
+		}
+	}
 	var hash [32]byte
 	copy(hash[:], bs[:32])
 	return hash

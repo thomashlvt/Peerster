@@ -100,8 +100,8 @@ func (s *Set) Len() int {
 }
 
 func (s *Set) RandExcept(except UDPAddr) (UDPAddr, bool) {
-	s.dataMutex.RLock()
-	defer s.dataMutex.RUnlock()
+	//s.dataMutex.RLock()
+	//defer s.dataMutex.RUnlock()
 
 	// No deadlock because these are all read locked
 	if (s.Len() == 1 && s.Contains(except)) || s.Len() == 0 {

@@ -13,7 +13,7 @@ $(document).ready(function(){
     let privateOriginEl = $("#private-origin");
     let privateMsgsEl = $("#private-messages");
 
-    let privateMsgContentEl = $("#private-message-content");
+    let privateMsgContentEl = $("#send-private-message-content");
     let privateMsgButtonEl = $("#private-message-button");
     let privateMsgDiv = $("#send-private-message");
 

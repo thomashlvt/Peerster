@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/thomashlvt/Peerster/files"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"net/http"
@@ -157,7 +158,7 @@ func (ws *WebServer) handleGetFiles(w http.ResponseWriter, r *http.Request) {
 	type respStruct struct {
 		Files []string `json:"files"`
 	}
-	resp := respStruct{Files: ws.fileHandler.GetFilesFromFilesystem()}
+	resp := respStruct{Files: files.GetFilesFromFilesystem()}
 
 	err := json.NewEncoder(w).Encode(resp)
 	if err != nil {

@@ -2,6 +2,7 @@ package rumorer
 
 import (
 	"fmt"
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"sync"
@@ -18,18 +19,15 @@ type State struct {
 
 	// Outgoing communication channel to send StatePackets
 	out chan *AddrGossipPacket
-
-	debug bool
 }
 
-func NewState(out chan *AddrGossipPacket, debug bool) *State {
+func NewState(out chan *AddrGossipPacket) *State {
 	return &State{
 		state:         make(map[string]uint32),
 		stateMutex:    &sync.RWMutex{},
 		messages:      make(map[string]map[uint32]*RumorMessage),
 		messagesMutex: &sync.RWMutex{},
 		out:           out,
-		debug:         debug,
 	}
 }
 
@@ -80,22 +78,13 @@ func (s *State) Compare(msg *StatusPacket) (iHave *PeerStatus, youHave *PeerStat
 				Identifier: entry.Identifier,
 				NextID:     entry.NextID, // This is the ID of the message I should send
 			}
-			if s.debug {
+			if Debug {
 				fmt.Printf("[DEBUG] CompareStatus: I AM IN FRONT\n")
-			}
-			return
-		} else if nextID < entry.NextID {
-			// He is in front
-			youHave = &PeerStatus{
-				Identifier: entry.Identifier,
-				NextID:     nextID, // This is the ID of the message I want
-			}
-			if s.debug {
-				fmt.Printf("[DEBUG] CompareStatus: HE IS IN FRONT\n")
 			}
 			return
 		}
 	}
+
 	// origins that the peer does not now about: send the message with ID 1
 	for origin, _ := range s.state {
 		if !origins[origin] {
@@ -103,8 +92,26 @@ func (s *State) Compare(msg *StatusPacket) (iHave *PeerStatus, youHave *PeerStat
 				Identifier: origin,
 				NextID:     1, // This is the ID of the message I have
 			}
-			if s.debug {
+			if Debug {
 				fmt.Printf("[DEBUG] CompareStatus: I AM IN FRONT\n")
+			}
+			return
+		}
+	}
+
+	for _, entry := range msg.Want {
+		nextID, exists := s.state[entry.Identifier]
+		if !exists {
+			nextID = 1
+		}
+		if nextID < entry.NextID {
+			// He is in front
+			youHave = &PeerStatus{
+				Identifier: entry.Identifier,
+				NextID:     nextID, // This is the ID of the message I want
+			}
+			if Debug {
+				fmt.Printf("[DEBUG] CompareStatus: HE IS IN FRONT\n")
 			}
 			return
 		}

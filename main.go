@@ -1,6 +1,7 @@
 package main
 
 import (
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/gossiper"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
@@ -19,12 +20,10 @@ var (
 	name          string
 	peers         string
 	simple        bool
-	debug         bool
 	antiEntropy   int
 	routeRumoring int
 
-	disableHw1 bool
-	disableHw2 bool
+	debug         bool
 )
 
 func main() {
@@ -55,11 +54,12 @@ func main() {
 		}
 	}
 
-	disableHw1 = true
-	disableHw2 = false
+	Debug = debug
+	HW1 = false
+	HW2 = true
 
 	// Initialize and run gossiper
-	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, debug, antiEntropy, routeRumoring, !disableHw1, !disableHw2)
+	goss := NewGossiper(name, peersSet, simple, uiPort, gossipAddr, antiEntropy, routeRumoring)
 	goss.Run()
 
 	// Wait forever

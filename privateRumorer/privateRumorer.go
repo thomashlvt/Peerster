@@ -2,6 +2,7 @@ package privateRumorer
 
 import (
 	"fmt"
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"sync"
@@ -19,7 +20,7 @@ type PrivateRumorer struct {
 	in      chan *AddrGossipPacket
 	out     chan *AddrGossipPacket
 	uiIn    chan *Message
-	fileOut chan *AddrGossipPacket
+	localOut chan *AddrGossipPacket
 
 	rumorerUIIn chan *Message // Channel on which the 'public' rumorer listens for UI messages: used to spread a route rumor
 
@@ -27,15 +28,11 @@ type PrivateRumorer struct {
 
 	routeRumoringTimeout time.Duration
 	hopLimit             uint32
-
-	debug bool
-	hw1   bool
-	hw2   bool
 }
 
 func NewPrivateRumorer(name string, in chan *AddrGossipPacket, uiIn chan *Message,
-	out chan *AddrGossipPacket, rumorerUIIn chan *Message, fileOut chan *AddrGossipPacket, routeRumoringTimeout int,
-	gossipAddr string, debug bool, hw1 bool, hw2 bool) *PrivateRumorer {
+	out chan *AddrGossipPacket, rumorerUIIn chan *Message, localOut chan *AddrGossipPacket, routeRumoringTimeout int,
+	gossipAddr string) *PrivateRumorer {
 
 	routingTable := NewRoutingTable()
 	routingTable.Add(name, UDPAddr{gossipAddr}, 0, false) // Add ourselves to the routing table
@@ -48,13 +45,10 @@ func NewPrivateRumorer(name string, in chan *AddrGossipPacket, uiIn chan *Messag
 		out:                  out,
 		uiIn:                 uiIn,
 		rumorerUIIn:          rumorerUIIn,
-		fileOut:              fileOut,
+		localOut:             localOut,
 		name:                 name,
 		routeRumoringTimeout: time.Duration(routeRumoringTimeout) * time.Second,
 		hopLimit:             hopLimit,
-		debug:                debug,
-		hw1:                  hw1,
-		hw2:                  hw2,
 	}
 }
 
@@ -78,6 +72,9 @@ func (pr *PrivateRumorer) UIIn() chan *Message {
 
 func (pr *PrivateRumorer) routeRumoring() {
 	for {
+		if Debug {
+			fmt.Printf("[DEBUG] sending route rumour\n")
+		}
 		pr.rumorerUIIn <- &Message{Text: ""}
 
 		timer := time.NewTicker(pr.routeRumoringTimeout)
@@ -101,7 +98,7 @@ func (pr *PrivateRumorer) Run() {
 					}
 					p2pMsg := packet.Gossip.ToP2PMessage()
 					if p2pMsg != nil {
-						if pr.debug {
+						if Debug {
 							fmt.Printf("[DEBUG] Received P2P Message from %s to %s\n", p2pMsg.GetOrigin(), p2pMsg.GetDestination())
 						}
 						pr.handlePointToPointMessage(p2pMsg, packet.Address)
@@ -116,7 +113,7 @@ func (pr *PrivateRumorer) Run() {
 }
 
 func (pr *PrivateRumorer) handleRumor(rumor *RumorMessage, addr UDPAddr) {
-	printDSDV := rumor.Text != ""
+	printDSDV := rumor.Text != "" || Debug
 	pr.routingTable.Add(rumor.Origin, addr, rumor.ID, printDSDV)
 }
 
@@ -125,25 +122,25 @@ func (pr *PrivateRumorer) handlePointToPointMessage(msg PointToPointMessage, add
 	if msg.GetDestination() == pr.name {
 		// Message reached destination
 		if gossip.Private != nil {
-			if pr.debug {
+			if Debug {
 				fmt.Printf("[DEBUG] Saving Private Message from %s\n", msg.GetOrigin())
 			}
 			pr.savePrivateMessage(gossip.Private)
-		} else if gossip.DataReply != nil || gossip.DataRequest != nil {
-			if pr.debug {
+		} else {
+			if Debug {
 				fmt.Printf("[DEBUG] Let File handling handle Data Reply/Request from %s\n", msg.GetOrigin())
 			}
-			pr.fileOut <- &AddrGossipPacket{addr, gossip}
+			pr.localOut <- &AddrGossipPacket{addr, gossip}
 		}
 		return
 	} else {
-		if pr.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] %v != %v\n", msg.GetDestination(), pr.name)
 		}
 	}
 
 	if msg.HopIsZero() {
-		if pr.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] Dropped message from %v to %v\n", msg.GetOrigin(), msg.GetDestination())
 		}
 		return // Discard the message
@@ -156,19 +153,21 @@ func (pr *PrivateRumorer) handlePointToPointMessage(msg PointToPointMessage, add
 
 	sendTo, found := pr.routingTable.Get(msg.GetDestination())
 	if found {
-		if pr.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] Sending P2P from %s to %s via %s\n", msg.GetOrigin(), msg.GetDestination(), sendTo)
 		}
 		pr.out <- &AddrGossipPacket{sendTo, gossip}
 	} else {
-		if pr.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] UNKNOWN DESTINATION: %s\n", msg.GetDestination())
 		}
 	}
 }
 
 func (pr *PrivateRumorer) handleUIMessage(msg *Message) {
-	fmt.Printf("CLIENT MESSAGE %v dest %v\n", msg.Text, *msg.Destination)
+	if HW2 {
+		fmt.Printf("CLIENT MESSAGE %v dest %v\n", msg.Text, *msg.Destination)
+	}
 
 	// Send the message received from the client
 	gossip := GossipPacket{Private: &PrivateMessage{
@@ -183,7 +182,7 @@ func (pr *PrivateRumorer) handleUIMessage(msg *Message) {
 	if found {
 		pr.out <- &AddrGossipPacket{sendTo, &gossip}
 	} else {
-		if pr.debug {
+		if Debug {
 			fmt.Printf("[DEBUG] UNKNOWN DESTINATION: %s\n", *msg.Destination)
 		}
 	}

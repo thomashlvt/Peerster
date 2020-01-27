@@ -9,6 +9,7 @@ import (
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 	"net/http"
+	"strings"
 )
 
 func (ws *WebServer) handleGetNodeID(w http.ResponseWriter, r *http.Request) {
@@ -181,5 +182,119 @@ func (ws *WebServer) handlePostDownloadFile(w http.ResponseWriter, r *http.Reque
 	req, _ := hex.DecodeString(data.Hash)
 
 	// Send message to the Gossiper
-	ws.fileHandler.UIIn() <- &Message{File: &data.FileName, Request: &req, Destination: &data.Origin}
+	msg := &Message{File: &data.FileName, Request: &req}
+	if data.Origin != "" {
+		msg.Destination = &data.Origin
+		ws.fileHandler.UIIn() <- msg
+	} else {
+		ws.searcher.UIIn() <- msg
+	}
+}
+
+
+func (ws *WebServer) handlePostSearchFile(w http.ResponseWriter, r *http.Request) {
+	// Decode the message and send it to the gossiper over UDP
+	decoder := json.NewDecoder(r.Body)
+	var data struct {
+		Keywords string `json:"keywords"`
+	}
+	err := decoder.Decode(&data)
+	if err != nil {
+		panic(err)
+	}
+
+	if data.Keywords != "" {
+		keywordsList := make([]string, 0)
+		for _, keyword := range strings.Split(data.Keywords, ",") {
+			if keyword != "" {
+				keywordsList = append(keywordsList, keyword)
+			}
+		}
+		// Send message to the Gossiper
+		ws.searcher.UIIn() <- &Message{Keywords: &keywordsList}
+	}
+}
+
+
+func (ws *WebServer) handleGetSearchFile(w http.ResponseWriter, r *http.Request) {
+	type Result struct {
+		Name string `json:"name"`
+		Meta string `json:"meta"`
+	}
+	type Results struct {
+		Results []Result `json:"results"`
+	}
+	results := ws.searcher.Results()
+	resultsJSON := Results{make([]Result, len(results))}
+
+	for i, result := range results {
+		resultJSON := Result{
+			Name: result.FileName,
+			Meta: hex.EncodeToString(result.MetafileHash),
+		}
+		resultsJSON.Results[i] = resultJSON
+	}
+
+	err := json.NewEncoder(w).Encode(resultsJSON)
+	if err != nil {
+		fmt.Printf("ERROR: could net encode origins: %v\n", err)
+	}
+}
+
+
+func (ws *WebServer) handleGetConfirmedRumors(w http.ResponseWriter, r *http.Request) {
+	type ConfirmedRumor struct {
+		Origin string `json:"origin"`
+		ID string `json:"id"`
+		Filename string `json:"filename"`
+		Size string `json:"size"`
+		Meta string `json:"meta"`
+	}
+	type ConfirmedRumors struct {
+		ConfirmedRumors []ConfirmedRumor `json:"confirmedRumors"`
+	}
+	confirmedRumors := ws.confirmationRumorer.ConfirmedRumors()
+	crsJSON := ConfirmedRumors{make([]ConfirmedRumor, len(confirmedRumors))}
+
+	for i, cr := range confirmedRumors {
+		crJSON := ConfirmedRumor{
+			Origin:   cr.Origin,
+			ID:       fmt.Sprintf("%v", cr.ID),
+			Filename: cr.Filename,
+			Size:     fmt.Sprintf("%v", cr.Size),
+			Meta:     hex.EncodeToString(cr.Meta),
+		}
+		crsJSON.ConfirmedRumors[i] = crJSON
+	}
+
+	err := json.NewEncoder(w).Encode(crsJSON)
+	if err != nil {
+		fmt.Printf("ERROR: could net encode origins: %v\n", err)
+	}
+}
+
+
+func (ws *WebServer) handleGetAdvancingToRound(w http.ResponseWriter, r *http.Request) {
+	type Round struct {
+		RoundNum string `json:"roundNum"`
+		BasedOn string `json:"basedOn"`
+	}
+	type Rounds struct {
+		Rounds []Round `json:"rounds"`
+	}
+	rounds := ws.confirmationRumorer.Rounds()
+	rsJSON := Rounds{make([]Round, len(rounds))}
+
+	for i, round := range rounds {
+		rJSON := Round{
+			RoundNum: fmt.Sprintf("%v", round.RoundNum),
+			BasedOn: round.BasedOn,
+		}
+		rsJSON.Rounds[i] = rJSON
+	}
+
+	err := json.NewEncoder(w).Encode(rsJSON)
+	if err != nil {
+		fmt.Printf("ERROR: could net encode origins: %v\n", err)
+	}
 }

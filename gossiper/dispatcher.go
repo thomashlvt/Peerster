@@ -36,10 +36,11 @@ type Dispatcher struct {
 	SearchHandlerUIIn chan *Message
 	SearchHandlerIn chan *AddrGossipPacket
 	SearchHandlerOut chan *AddrGossipPacket
+
+	ConfRumorerP2PIn chan *AddrGossipPacket
 }
 
 func NewDispatcher(uiPort string, gossipAddr string) *Dispatcher {
-	// TODO: change chan buffers back
 	return &Dispatcher{
 		UIServer:     NewServer("127.0.0.1:" + uiPort),
 		GossipServer: NewServer(gossipAddr),
@@ -60,7 +61,7 @@ func NewDispatcher(uiPort string, gossipAddr string) *Dispatcher {
 		SearchHandlerIn: make(chan *AddrGossipPacket, 1024),
 		SearchHandlerOut: make(chan *AddrGossipPacket, 1024),
 
-		// TODO: check if it also works with unbuffered channels!
+		ConfRumorerP2PIn: make(chan *AddrGossipPacket, 1024),
 	}
 }
 
@@ -103,6 +104,8 @@ func (d *Dispatcher) Run() {
 				d.SearchHandlerIn <- packet
 			} else if packet.Gossip.DataReply != nil || packet.Gossip.DataRequest != nil {
 				d.FileHandlerIn <- packet
+			} else if packet.Gossip.Ack != nil && (HW3EX2 || HW3EX3){
+				d.ConfRumorerP2PIn <- packet
 			}
 		}
 	}()
@@ -154,7 +157,7 @@ func (d *Dispatcher) dispatchFromPeer(gossip *AddrGossipPacket) {
 		d.RumorerGossipIn <- gossip
 	}
 
-	if gossip.Gossip.Private != nil || gossip.Gossip.DataReply != nil || gossip.Gossip.DataRequest != nil {
+	if gossip.Gossip.Private != nil || gossip.Gossip.DataReply != nil || gossip.Gossip.DataRequest != nil || gossip.Gossip.Ack != nil {
 		d.PrivateRumorerGossipIn <- gossip
 	}
 
@@ -163,6 +166,11 @@ func (d *Dispatcher) dispatchFromPeer(gossip *AddrGossipPacket) {
 	}
 
 	if gossip.Gossip.SearchReply != nil {
+		d.PrivateRumorerGossipIn <- gossip
+	}
+
+	if gossip.Gossip.TLCMessage != nil {
+		d.RumorerGossipIn <- gossip
 		d.PrivateRumorerGossipIn <- gossip
 	}
 }

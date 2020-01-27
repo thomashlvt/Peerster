@@ -1,6 +1,7 @@
 package rumorer
 
 import (
+	. "github.com/thomashlvt/Peerster/confirmationRumorer"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
 )
@@ -15,4 +16,6 @@ type GenericRumorer interface {
 	Peers() []UDPAddr
 	AddPeer(addr UDPAddr)
 	UIIn() chan *Message
+	TLCIn() chan *TLCMessageWithReplyChan
+	TLCOut() chan *TLCMessage
 }

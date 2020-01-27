@@ -1,6 +1,7 @@
 package rumorer
 
 import (
+	. "github.com/thomashlvt/Peerster/confirmationRumorer"
 	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/udp"
 	. "github.com/thomashlvt/Peerster/utils"
@@ -55,6 +56,16 @@ func (s *SimpleRumorer) AddPeer(peer UDPAddr) {
 
 func (s *SimpleRumorer) UIIn() chan *Message {
 	return s.uiIn
+}
+
+func (s *SimpleRumorer) TLCIn() chan *TLCMessageWithReplyChan {
+	// Simply for compliance with the interface: this does not work in simple mode
+	return nil
+}
+
+func (s *SimpleRumorer) TLCOut() chan *TLCMessage {
+	// Simply for compliance with the interface: this does not work in simple mode
+	return nil
 }
 
 func (s *SimpleRumorer) Run() {

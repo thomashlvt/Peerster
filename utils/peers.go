@@ -58,6 +58,16 @@ func (s *Set) Data() []UDPAddr {
 	return all
 }
 
+func (s *Set) ShuffledData() []UDPAddr {
+	peers := s.Data()
+	for i := len(peers) - 1; i > 0; i-- { // Fisher–Yates shuffle
+		j := rand.Intn(i + 1)
+		peers[i], peers[j] = peers[j], peers[i]
+	}
+	return peers
+}
+
+
 func (s *Set) String() string {
 	s.dataMutex.RLock()
 	defer s.dataMutex.RUnlock()

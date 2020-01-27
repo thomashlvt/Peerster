@@ -1,9 +1,11 @@
 package web
 
 import (
+	. "github.com/thomashlvt/Peerster/confirmationRumorer"
 	. "github.com/thomashlvt/Peerster/files"
 	. "github.com/thomashlvt/Peerster/privateRumorer"
 	. "github.com/thomashlvt/Peerster/rumorer"
+	. "github.com/thomashlvt/Peerster/search"
 
 	"github.com/gorilla/mux"
 	"net/http"
@@ -15,6 +17,8 @@ type WebServer struct {
 	rumorer        GenericRumorer
 	privateRumorer *PrivateRumorer
 	fileHandler    *FileHandler
+	searcher       *Searcher
+	confirmationRumorer *ConfirmationRumorer
 
 	router *mux.Router
 	server *http.Server
@@ -22,12 +26,15 @@ type WebServer struct {
 	uiPort string
 }
 
-func NewWebServer(rumorer GenericRumorer, privateRumorer *PrivateRumorer, fileHandler *FileHandler, uiPort string) (ws *WebServer) {
+func NewWebServer(rumorer GenericRumorer, privateRumorer *PrivateRumorer, fileHandler *FileHandler, searcher *Searcher, confirmationRumorer *ConfirmationRumorer, uiPort string) (ws *WebServer) {
 	ws = &WebServer{}
 	ws.uiPort = uiPort
 	ws.rumorer = rumorer
 	ws.privateRumorer = privateRumorer
 	ws.fileHandler = fileHandler
+	ws.searcher = searcher
+	ws.confirmationRumorer = confirmationRumorer
+
 	ws.router = mux.NewRouter()
 
 	// Serve api calls
@@ -42,6 +49,10 @@ func NewWebServer(rumorer GenericRumorer, privateRumorer *PrivateRumorer, fileHa
 	ws.router.HandleFunc("/files", ws.handleGetFiles).Methods("GET")
 	ws.router.HandleFunc("/files/download", ws.handlePostDownloadFile).Methods("POST")
 	ws.router.HandleFunc("/files/share", ws.handlePostShareFile).Methods("POST")
+	ws.router.HandleFunc("/files/search", ws.handlePostSearchFile).Methods("POST")
+	ws.router.HandleFunc("/files/search", ws.handleGetSearchFile).Methods("GET")
+	ws.router.HandleFunc("/confirmed-rumors", ws.handleGetConfirmedRumors).Methods("GET")
+	ws.router.HandleFunc("/advancing-to-round", ws.handleGetAdvancingToRound).Methods("GET")
 
 	// Serve static files (Note: relative path from Peerster root)
 	ws.router.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("web/assets"))))

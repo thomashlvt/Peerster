@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-const hopLimit uint32 = 10 // Default hopLimit
 
 type PrivateRumorer struct {
 	routingTable *RoutingTable
@@ -32,7 +31,7 @@ type PrivateRumorer struct {
 
 func NewPrivateRumorer(name string, in chan *AddrGossipPacket, uiIn chan *Message,
 	out chan *AddrGossipPacket, rumorerUIIn chan *Message, localOut chan *AddrGossipPacket, routeRumoringTimeout int,
-	gossipAddr string) *PrivateRumorer {
+	gossipAddr string, hopLimit int) *PrivateRumorer {
 
 	routingTable := NewRoutingTable()
 	routingTable.Add(name, UDPAddr{gossipAddr}, 0, false) // Add ourselves to the routing table
@@ -48,7 +47,7 @@ func NewPrivateRumorer(name string, in chan *AddrGossipPacket, uiIn chan *Messag
 		localOut:             localOut,
 		name:                 name,
 		routeRumoringTimeout: time.Duration(routeRumoringTimeout) * time.Second,
-		hopLimit:             hopLimit,
+		hopLimit:             uint32(hopLimit),
 	}
 }
 
@@ -94,8 +93,9 @@ func (pr *PrivateRumorer) Run() {
 			case packet := <-pr.in:
 				go func() {
 					if packet.Gossip.Rumor != nil {
-						pr.handleRumor(packet.Gossip.Rumor, packet.Address)
+						pr.handleMongerable(packet.Gossip.Rumor, packet.Address)
 					}
+
 					p2pMsg := packet.Gossip.ToP2PMessage()
 					if p2pMsg != nil {
 						if Debug {
@@ -112,9 +112,14 @@ func (pr *PrivateRumorer) Run() {
 	}()
 }
 
-func (pr *PrivateRumorer) handleRumor(rumor *RumorMessage, addr UDPAddr) {
-	printDSDV := rumor.Text != "" || Debug
-	pr.routingTable.Add(rumor.Origin, addr, rumor.ID, printDSDV)
+func (pr *PrivateRumorer) handleMongerable(msg MongerableMessage, addr UDPAddr) {
+	var printDSDV bool
+	if msg.ToGossip().Rumor != nil {
+		printDSDV = msg.ToGossip().Rumor.Text != "" || Debug
+	} else {
+		printDSDV = true
+	}
+	pr.routingTable.Add(msg.GetOrigin(), addr, msg.GetID(), printDSDV)
 }
 
 func (pr *PrivateRumorer) handlePointToPointMessage(msg PointToPointMessage, addr UDPAddr) {
@@ -126,13 +131,16 @@ func (pr *PrivateRumorer) handlePointToPointMessage(msg PointToPointMessage, add
 				fmt.Printf("[DEBUG] Saving Private Message from %s\n", msg.GetOrigin())
 			}
 			pr.savePrivateMessage(gossip.Private)
+
 		} else {
 			if Debug {
-				fmt.Printf("[DEBUG] Let File handling handle Data Reply/Request from %s\n", msg.GetOrigin())
+				fmt.Printf("[DEBUG] Let other gossiper part handle p2pmsg from %s\n", msg.GetOrigin())
 			}
 			pr.localOut <- &AddrGossipPacket{addr, gossip}
 		}
+
 		return
+
 	} else {
 		if Debug {
 			fmt.Printf("[DEBUG] %v != %v\n", msg.GetDestination(), pr.name)

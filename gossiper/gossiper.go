@@ -1,6 +1,8 @@
 package gossiper
 
 import (
+	. "github.com/thomashlvt/Peerster/confirmationRumorer"
+	. "github.com/thomashlvt/Peerster/constants"
 	. "github.com/thomashlvt/Peerster/files"
 	. "github.com/thomashlvt/Peerster/privateRumorer"
 	. "github.com/thomashlvt/Peerster/rumorer"
@@ -22,11 +24,18 @@ type Gossiper struct {
 
 	Searcher *Searcher
 
+	ConfirmationRumorer *ConfirmationRumorer
+
 	name string
+
+	simple bool
+
+	N int
+	stubbornTimeout int
 }
 
 func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr string,
-	antiEntropy int, routeRumoringTimeout int) *Gossiper {
+	antiEntropy int, routeRumoringTimeout int, N int, stubbornTimeout int, hopLimit int) *Gossiper {
 	// Create the dispatcher
 	disp := NewDispatcher(uiPort, gossipAddr)
 
@@ -40,16 +49,18 @@ func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr
 
 	// Create the rumorer for private messages
 	privateRumorer := NewPrivateRumorer(name, disp.PrivateRumorerGossipIn, disp.PrivateRumorerUIIn,
-		disp.PrivateRumorerGossipOut, disp.RumorerUIIn, disp.PrivateRumorerLocalOut, routeRumoringTimeout, gossipAddr)
+		disp.PrivateRumorerGossipOut, disp.RumorerUIIn, disp.PrivateRumorerLocalOut, routeRumoringTimeout, gossipAddr, hopLimit)
 
-	fileHandler := NewFileHandler(name, disp.FileHandlerIn, disp.FileHandlerUIIn, disp.PrivateRumorerGossipIn)
+	fileHandler := NewFileHandler(name, disp.FileHandlerIn, disp.FileHandlerUIIn, disp.PrivateRumorerGossipIn, hopLimit)
 	files, filesMutex := fileHandler.Files()
 
 	searcher := NewSearcher(name, peers, disp.SearchHandlerIn, disp.SearchHandlerOut, disp.SearchHandlerUIIn,
-		disp.PrivateRumorerGossipIn, fileHandler.SearchDownloadIn(), files, filesMutex)
+		disp.PrivateRumorerGossipIn, fileHandler.SearchDownloadIn(), files, filesMutex, hopLimit)
+
+	confirmationRumorer := NewConfirmationRumorer(name, fileHandler.ConfFileOut(), rumorer.TLCOut(), disp.ConfRumorerP2PIn, disp.PrivateRumorerGossipIn, rumorer.TLCIn(), N, hopLimit, stubbornTimeout)
 
 	// Create the webserver for interacting with the rumorer
-	webServer := NewWebServer(rumorer, privateRumorer, fileHandler, uiPort)
+	webServer := NewWebServer(rumorer, privateRumorer, fileHandler, searcher, confirmationRumorer,uiPort)
 
 	return &Gossiper{
 		Dispatcher:     disp,
@@ -58,16 +69,25 @@ func NewGossiper(name string, peers *Set, simple bool, uiPort string, gossipAddr
 		PrivateRumorer: privateRumorer,
 		FileHandler:    fileHandler,
 		Searcher:       searcher,
+		ConfirmationRumorer: confirmationRumorer,
+		simple:         simple,
 		name:           name,
+		N:				N,
+		stubbornTimeout: stubbornTimeout,
 	}
 }
 
 func (g *Gossiper) Run() {
 	g.Dispatcher.Run()
 	g.Rumorer.Run()
-	g.PrivateRumorer.Run()
-	g.FileHandler.Run()
-	g.Searcher.Run()
+	if !g.simple {
+		g.PrivateRumorer.Run()
+		g.FileHandler.Run()
+		g.Searcher.Run()
+		if HW3EX2 || HW3EX3 {
+			g.ConfirmationRumorer.Run()
+		}
+	}
 	if g.WebServer != nil {
 		g.WebServer.Run()
 	}

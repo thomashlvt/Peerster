@@ -14,7 +14,7 @@ type State struct {
 	stateMutex *sync.RWMutex
 
 	// All accepted messages, indexed by Origin
-	messages      map[string]map[uint32]*RumorMessage
+	messages      map[string]map[uint32] MongerableMessage
 	messagesMutex *sync.RWMutex
 
 	// Outgoing communication channel to send StatePackets
@@ -25,7 +25,7 @@ func NewState(out chan *AddrGossipPacket) *State {
 	return &State{
 		state:         make(map[string]uint32),
 		stateMutex:    &sync.RWMutex{},
-		messages:      make(map[string]map[uint32]*RumorMessage),
+		messages:      make(map[string]map[uint32] MongerableMessage),
 		messagesMutex: &sync.RWMutex{},
 		out:           out,
 	}
@@ -36,16 +36,16 @@ func (s *State) Messages() []*RumorMessage {
 	res := make([]*RumorMessage, 0)
 	for _, msgs := range s.messages {
 		for _, v := range msgs {
-			if v.Text != "" { // Don't include the route rumors
-				res = append(res, v)
-
+			gossip := v.ToGossip()
+			if gossip.Rumor != nil && gossip.Rumor.Text != "" { // don't include the route rumors and tlc messages
+				res = append(res, gossip.Rumor)
 			}
 		}
 	}
 	return res
 }
 
-func (s *State) Message(origin string, id uint32) (rumor *RumorMessage) {
+func (s *State) Message(origin string, id uint32) (rumor MongerableMessage) {
 	// Return message
 	s.messagesMutex.RLock()
 	rumor = s.messages[origin][id]
@@ -119,30 +119,30 @@ func (s *State) Compare(msg *StatusPacket) (iHave *PeerStatus, youHave *PeerStat
 	return
 }
 
-func (s *State) Update(msg *RumorMessage) (res bool) {
+func (s *State) Update(msg MongerableMessage) (res bool) {
 	s.stateMutex.Lock()
 	defer s.stateMutex.Unlock()
 
-	curr, exists := s.state[msg.Origin]
+	curr, exists := s.state[msg.GetOrigin()]
 	if !exists {
 		curr = 1
 	}
-	if curr <= msg.ID {
+	if curr <= msg.GetID() {
 		// Save the message
 		s.messagesMutex.Lock()
-		if _, ok := s.messages[msg.Origin]; !ok {
-			s.messages[msg.Origin] = make(map[uint32]*RumorMessage)
+		if _, ok := s.messages[msg.GetOrigin()]; !ok {
+			s.messages[msg.GetOrigin()] = make(map[uint32] MongerableMessage)
 		}
-		s.messages[msg.Origin][msg.ID] = msg
+		s.messages[msg.GetOrigin()][msg.GetID()] = msg
 		s.messagesMutex.Unlock()
 
 		// Update the vector clock
 		s.messagesMutex.RLock()
-		_, ok := s.messages[msg.Origin][curr]
+		_, ok := s.messages[msg.GetOrigin()][curr]
 		for ok {
 			curr += 1
-			_, ok = s.messages[msg.Origin][curr]
-			s.state[msg.Origin] = curr
+			_, ok = s.messages[msg.GetOrigin()][curr]
+			s.state[msg.GetOrigin()] = curr
 		}
 		s.messagesMutex.RUnlock()
 
@@ -153,7 +153,7 @@ func (s *State) Update(msg *RumorMessage) (res bool) {
 	return res
 }
 
-func (s *State) Send(addr UDPAddr) {
+func (s *State) ToStatusPacket() *StatusPacket{
 	s.stateMutex.RLock()
 	defer s.stateMutex.RUnlock()
 
@@ -162,8 +162,11 @@ func (s *State) Send(addr UDPAddr) {
 	for origin, next := range s.state {
 		want = append(want, PeerStatus{origin, next})
 	}
+	return &StatusPacket{Want: want}
+}
 
+func (s *State) Send(addr UDPAddr) {
 	// Send it on the outgoing communication channel
-	gossip := GossipPacket{Status: &StatusPacket{Want: want}}
+	gossip := GossipPacket{Status: s.ToStatusPacket()}
 	s.out <- &AddrGossipPacket{addr, &gossip}
 }

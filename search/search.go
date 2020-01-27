@@ -17,8 +17,6 @@ const FLOODTIMEOUT = 1
 const MATCHTHRESHOLD = 2
 const BUDGETTHRESHOLD = 32
 
-// TODO: check if search request on own node
-// TODO: currently is also processed by own nodes
 
 type Searcher struct {
 	in      chan *AddrGossipPacket
@@ -40,10 +38,31 @@ type Searcher struct {
 
 	knownFiles map[[32]byte] []*string
 	knownFilesMutex *sync.RWMutex
+
+	hopLimit uint32
+
+	// For the GUI to be able to request the results of a search
+	results []*SearchResult
+	resultsMutex *sync.RWMutex
+}
+
+
+func (s *Searcher) UIIn() chan *Message {
+	return s.uiIn
+}
+
+
+func (s *Searcher) Results() []*SearchResult {
+	s.resultsMutex.RLock()
+	defer s.resultsMutex.RUnlock()
+	// Make copy to avoid concurrency issues
+	res := make([]*SearchResult, len(s.results))
+	copy(res, s.results)
+	return res
 }
 
 func NewSearcher(name string, peers *Set, in chan *AddrGossipPacket, out chan *AddrGossipPacket,
-	uiIn chan *Message, p2pOut chan *AddrGossipPacket, sDOut chan *SearchDownload, files *map[[32]byte]*File, filesMutex *sync.RWMutex) *Searcher {
+	uiIn chan *Message, p2pOut chan *AddrGossipPacket, sDOut chan *SearchDownload, files *map[[32]byte]*File, filesMutex *sync.RWMutex, hopLimit int) *Searcher {
 	cache := NewSearchRequestCache()
 	cache.Run()
 	return &Searcher{
@@ -52,7 +71,7 @@ func NewSearcher(name string, peers *Set, in chan *AddrGossipPacket, out chan *A
 		uiIn: uiIn,
 		p2pOut: p2pOut,
 		searchDownloadOut: sDOut,
-		searchReplies: make(chan *SearchReply),
+		searchReplies: nil,
 		name: name,
 		peers: peers,
 		requestCache: cache,
@@ -60,13 +79,16 @@ func NewSearcher(name string, peers *Set, in chan *AddrGossipPacket, out chan *A
 		filesMutex: filesMutex,
 		knownFiles: make(map[[32]byte] []*string),
 		knownFilesMutex: &sync.RWMutex{},
+		hopLimit: uint32(hopLimit),
+		results: make([]*SearchResult, 0),
+		resultsMutex: &sync.RWMutex{},
 	}
 }
 
 func (s *Searcher) Run() {
 	go func() {
 		for {
-			select{
+			select {
 			case msg := <- s.uiIn:
 				go s.handleUIMessage(msg)
 			case packet := <- s.in:
@@ -74,7 +96,9 @@ func (s *Searcher) Run() {
 					go s.handleSearchRequest(packet.Gossip.SearchRequest, packet.Address)
 				} else if packet.Gossip.SearchReply != nil {
 					// Assume that no other search queries are happening in parallel
-					s.searchReplies <- packet.Gossip.SearchReply
+					if s.searchReplies != nil {
+						s.searchReplies <- packet.Gossip.SearchReply
+					}
 				}
 			}
 		}
@@ -83,38 +107,23 @@ func (s *Searcher) Run() {
 
 type fileID struct {meta [32]byte; fileName string}
 
-
 func (s *Searcher) search(keywords []string, budget *uint64) {
+	// New search: clear results that will be requested by the GUI
+	s.results = make([]*SearchResult, 0)
+
 	// Keep a map to efficiently check if we got a duplicate result
 	completeFiles := make(map[fileID]*SearchResult, 0)
 	waitGroup := &sync.WaitGroup{}
 
-	// Look for matches locally
-	matches := s.findMatch(keywords)
-	for _, match := range matches {
-		completeFiles[fileID{To32Byte(match.MetafileHash), match.FileName}] = match
-	}
-
 	if budget != nil {
 		if len(completeFiles) < MATCHTHRESHOLD {
-			// TODO: should we keep on retrying here?
-			req := SearchRequest{
-				Origin:   s.name,
-				Budget:   *budget - 1,  // -1 because we checked the local node
-				Keywords: keywords,
-			}
-			s.searchIteration(&req, completeFiles, waitGroup)
+			s.searchIteration(*budget - 1, keywords, completeFiles, waitGroup)
 		}
 
 	} else {
 		currBudget := 2
-		for currBudget <= BUDGETTHRESHOLD && len(completeFiles) < MATCHTHRESHOLD{
-			req := SearchRequest{
-				Origin:   s.name,
-				Budget:   uint64(currBudget - 1),  // -1 because we checked the local node
-				Keywords: keywords,
-			}
-			s.searchIteration(&req, completeFiles, waitGroup)
+		for currBudget <= BUDGETTHRESHOLD && len(completeFiles) < MATCHTHRESHOLD {
+			s.searchIteration(uint64(currBudget - 1), keywords, completeFiles, waitGroup)
 			currBudget *= 2
 		}
 	}
@@ -128,15 +137,18 @@ func (s *Searcher) search(keywords []string, budget *uint64) {
 }
 
 
-func (s *Searcher) searchIteration(req *SearchRequest, completeFiles map[fileID]*SearchResult, waitGroup *sync.WaitGroup) {
-	s.flood(req)
+func (s *Searcher) searchIteration(budget uint64, keywords []string, completeFiles map[fileID]*SearchResult, waitGroup *sync.WaitGroup) {
+	s.flood(budget, s.name, keywords, UDPAddr{})
 	timer := time.NewTicker(time.Second * FLOODTIMEOUT)
+	s.searchReplies = make(chan *SearchReply)
 
 	done := false
 	for !done {
 		select {
 		case <- timer.C:
 			done = true
+			s.searchReplies = nil
+
 		case reply := <- s.searchReplies:
 			results := s.processSearchReply(reply)
 
@@ -156,6 +168,7 @@ func (s *Searcher) searchIteration(req *SearchRequest, completeFiles map[fileID]
 
 			if len(completeFiles) >= MATCHTHRESHOLD {
 				done = true
+				s.searchReplies = nil
 			}
 		}
 	}
@@ -188,8 +201,6 @@ func (s *Searcher) download(fileName string, request [32]byte) {
 	}
 
 	s.searchDownloadOut <- req
-
-	// <- replyChan TODO: wait on reply?
 
 }
 
@@ -241,10 +252,14 @@ func (s *Searcher) processCompleteFile(result *SearchResult, peer string, group 
 		chunksStr = chunksStr[:len(chunksStr)-1]
 	}
 
-	toPrint := 	fmt.Sprintf("FOUND match %v at %v\n", result.FileName, peer) +
+	toPrint := 	fmt.Sprintf("FOUND match %v at %v ", result.FileName, peer) +
 		fmt.Sprintf("metafile=%v chunks=%v\n", hex.EncodeToString(result.MetafileHash), chunksStr)
 	fmt.Printf(toPrint)
 
+	// Add result to struct that can be requested by the GUI
+	s.resultsMutex.Lock()
+	s.results = append(s.results, result)
+	s.resultsMutex.Unlock()
 
 
 	s.knownFilesMutex.RLock()
@@ -260,9 +275,7 @@ func (s *Searcher) processCompleteFile(result *SearchResult, peer string, group 
 	s.knownFilesMutex.RUnlock()
 	s.searchDownloadOut <- req
 
-	// TODO: what if metafile eventually not found?
-
-	<- replyChan // TODO: wait for reply?
+	<- replyChan
 }
 
 func (s *Searcher) handleSearchRequest(req *SearchRequest, addr UDPAddr) {
@@ -289,44 +302,67 @@ func (s *Searcher) handleSearchRequest(req *SearchRequest, addr UDPAddr) {
 		reply := SearchReply{
 			Origin:      s.name,
 			Destination: req.Origin,
-			HopLimit:    HOPLIMIT,
+			HopLimit:    s.hopLimit,
 			Results:     matches,
 		}
 		s.p2pOut <- &AddrGossipPacket{UDPAddr{}, &GossipPacket{SearchReply: &reply}}
 		
 	} else {
-		// No match: flood the request
 		if Debug {
 			fmt.Printf("[DEBUG] No matches found for: %v\n", req.Keywords)
 		}
-		if req.Budget > 1 {
-			req.Budget -= 1
-			s.flood(req)
-		} else {
-			if Debug {
-				fmt.Printf("[DEBUG] No more budget for: %v, from %v\n", req.Keywords, req.Origin)
-			}
+	}
+
+	// Flood the request
+	if req.Budget > 1 {
+		req.Budget -= 1
+		s.flood(req.Budget, req.Origin, req.Keywords, addr)
+	} else {
+		if Debug {
+			fmt.Printf("[DEBUG] No more budget for: %v, from %v\n", req.Keywords, req.Origin)
 		}
 	}
 }
 
-func (s *Searcher) flood(req *SearchRequest) {
-	// TODO shuffle peers
-	minBudgetPerPeer := int(req.Budget) / s.peers.Len()
-	extraBudget := int(req.Budget) % s.peers.Len()
-	if Debug {
-		fmt.Println("[DEBUG] Flooding...")
+func (s *Searcher) flood(budget uint64, origin string, keywords []string, except UDPAddr) {
+	var numPeers uint64
+	if s.peers.Contains(except) {
+		numPeers = uint64(s.peers.Len() - 1)
+	} else {
+		numPeers = uint64(s.peers.Len())
 	}
-	for _, peer := range s.peers.Data() {
+
+	if numPeers == 0 {
+		return
+	}
+
+	minBudgetPerPeer := budget / numPeers
+	extraBudget := budget % numPeers
+	if Debug {
+		fmt.Printf("[DEBUG] Flooding with budget %v...\n", budget)
+	}
+	for _, peer := range s.peers.ShuffledData() {
+		if peer == except {
+			continue
+		}
+
 		budget := minBudgetPerPeer
 		if extraBudget > 0 {
 			budget += 1
 			extraBudget -= 1
 		}
-		if Debug {
-			fmt.Printf("[DEBUG] Sending SearchRequest to %v\n", peer)
+
+		if budget > 0 {
+			if Debug {
+				fmt.Printf("[DEBUG] Sending SearchRequest to %v with budget %v\n", peer, budget)
+			}
+			req := SearchRequest{
+				Origin:   origin,
+				Budget:   budget,
+				Keywords: keywords,
+			}
+			s.out <- &AddrGossipPacket{peer, &GossipPacket{SearchRequest: &req}}
 		}
-		s.out <- &AddrGossipPacket{peer, &GossipPacket{SearchRequest: req}}
 	}
 }
 

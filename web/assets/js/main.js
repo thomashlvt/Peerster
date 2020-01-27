@@ -24,6 +24,16 @@ $(document).ready(function(){
     let fileDownloadEl = $("#download-file-button");
     let fileNameEl = $("#download-file-name");
 
+    let keywordsEl = $("#keywords");
+    let searchEl = $("#search-file-button");
+
+    let resultsEl = $("#results");
+    let downloadResultFilenameEl = $("#download-result-filename");
+
+    let confirmedRumorsEl = $("#confirmed-rumors");
+
+    let advancingToRoundEl = $("#advancing-to-round");
+
     let currentOrigin = null;
 
     let knownMessages = new Set();
@@ -194,5 +204,90 @@ $(document).ready(function(){
             dataType: 'json'
         });
     });
+
+    function search(){
+        // Reset results
+        results = new Map();
+        resultsEl.text("");
+        $.ajax({
+            type: 'POST',
+            url: '/files/search',
+            data: JSON.stringify ({keywords: keywordsEl.val()}),
+            contentType: "application/json",
+            dataType: 'json'
+        });
+    }
+
+    searchEl.click(search);
+    keywordsEl.keyup(function(e){
+        if (e.keyCode == 13) {
+            search();
+        }
+    });
+
+    let results = new Map();
+    function refreshResults() {
+        $.getJSON("/files/search", function(data) {
+            for (i = 0; i < data.results.length; i++) {
+                if (!results.has(data.results[i].name)) {
+                    results.set(data.results[i].name, data.results[i].meta);
+                    resultsEl.append("<li><a href=\"javascript:void(0)\" class='download-result' data-id='" + data.results[i].meta + "'>" + data.results[i].name + "</a></li>");
+
+                    $(".download-result").click(function(){
+                        if (downloadResultFilenameEl.val() == "") {
+                            alert("Please enter a filename for downloading the result!")
+                        }
+                        $.ajax({
+                            type: 'POST',
+                            url: '/files/download',
+                            data: JSON.stringify ({hash: $(this).data("id"), origin: "", filename: downloadResultFilenameEl.val()}),
+                            contentType: "application/json",
+                            dataType: 'json'
+                        });
+                    });
+                }
+            }
+        }).always(function(){
+            setTimeout(refreshResults, 100);
+        })
+    }
+
+    refreshResults();
+
+    let confirmedRumors = new Set();
+    function refreshConfirmedRumors(){
+        $.getJSON("confirmed-rumors", function(data) {
+            for (i = 0; i < data.confirmedRumors.length; i++) {
+                cr = data.confirmedRumors[i];
+                if (!confirmedRumors.has(JSON.stringify(cr))) {
+                    confirmedRumors.add(JSON.stringify(cr));
+                    descr = "origin " + cr.origin + " ID " + cr.id + " file name " + cr.filename + " size "  + cr.size + " metahash " + cr.meta;
+                    confirmedRumorsEl.append("<li>" + descr + "</li>")
+                }
+            }
+        }).always(function(){
+            setTimeout(refreshConfirmedRumors, 100);
+        });
+    }
+
+    refreshConfirmedRumors();
+
+    let rounds = new Set();
+    function refreshRounds(){
+        $.getJSON("advancing-to-round", function(data) {
+            for (i = 0; i < data.rounds.length; i++) {
+                r = data.rounds[i];
+                if (!rounds.has(JSON.stringify(r))) {
+                    rounds.add(JSON.stringify(r));
+                    descr = "round " + r.roundNum + " BASED ON CONFIRMED MESSAGES " + r.basedOn;
+                    advancingToRoundEl.append("<li>" + descr + "</li>")
+                }
+            }
+        }).always(function(){
+            setTimeout(refreshRounds, 100);
+        });
+    }
+
+    refreshRounds();
 
 });

@@ -29,6 +29,10 @@ type SearchDownload struct {
 	Name string
 }
 
+type FileWithReplyChan struct {
+	File *File
+	ReplyChan chan bool
+}
 
 type FileHandler struct {
 	name string
@@ -40,24 +44,28 @@ type FileHandler struct {
 
 	searchDownloadIn chan *SearchDownload
 
+	confFileOut chan *FileWithReplyChan
+
 	downloadsInProgress      map[chanId]chan *DataReply
 	downloadsInProgressMutex *sync.RWMutex
 
 	// Store chunks separately so they can be found more efficiently
-	// TODO: maybe store 'metaChunks' separately
 	chunks      map[[32]byte][]byte
 	chunksMutex *sync.RWMutex
 
 	files map[[32]byte] *File
 	filesMutex *sync.RWMutex
+
+	hopLimit uint32
 }
 
-func NewFileHandler(name string, in chan *AddrGossipPacket, uiIn chan *Message, ptpOut chan *AddrGossipPacket) *FileHandler {
+func NewFileHandler(name string, in chan *AddrGossipPacket, uiIn chan *Message, ptpOut chan *AddrGossipPacket, hopLimit int) *FileHandler {
 	return &FileHandler{
 		name:                     name,
 		in:                       in,
 		uiIn:                     uiIn,
 		pointToPointOut:          ptpOut,
+		confFileOut:              make(chan *FileWithReplyChan),
 		downloadsInProgress:      make(map[chanId]chan *DataReply),
 		downloadsInProgressMutex: &sync.RWMutex{},
 		searchDownloadIn:         make(chan *SearchDownload),
@@ -65,6 +73,7 @@ func NewFileHandler(name string, in chan *AddrGossipPacket, uiIn chan *Message, 
 		chunksMutex:              &sync.RWMutex{},
 		files:					  make(map[[32]byte]*File),
 		filesMutex:               &sync.RWMutex{},
+		hopLimit:                 uint32(hopLimit),
 	}
 }
 
@@ -78,6 +87,10 @@ func (fh *FileHandler) Files() (*map[[32]byte]*File, *sync.RWMutex) {
 
 func (fh *FileHandler) SearchDownloadIn() chan *SearchDownload {
 	return fh.searchDownloadIn
+}
+
+func (fh *FileHandler) ConfFileOut() chan *FileWithReplyChan {
+	return fh.confFileOut
 }
 
 func (fh *FileHandler) Run() {
@@ -148,19 +161,55 @@ func (fh *FileHandler) handleNewFile(name string) {
 	f := NewFile(name)
 
 	// Chunk storage is passed to store the chunks
-	f.LoadFromFileSystem(&fh.chunks, fh.chunksMutex)
+	chunks, hashes := f.LoadFromFileSystem()
 
-	// Add chunk to files map
-	fh.filesMutex.Lock()
-	fh.files[f.Hash] = f
-	fh.filesMutex.Unlock()
+	// Check name of new file
+	var confirmed bool
+	if HW3EX2 || HW3EX3 {
+		replyChan := make(chan bool)
+		fh.confFileOut <- &FileWithReplyChan{f, replyChan}
+		confirmed = <- replyChan
+	} else {
+		confirmed = true
+	}
+
+	if confirmed {
+		fh.addToStorage(chunks, hashes)
+		// Add chunk to files map
+		fh.filesMutex.Lock()
+		fh.files[f.Hash] = f
+		fh.filesMutex.Unlock()
+
+		if HW2 {
+			fmt.Printf("METAFILE %s\n", hex.EncodeToString(f.Hash[:]))
+		}
+
+		if Debug && HW2 {
+			fmt.Printf("[DEBUG] Filename: %v\n", f.Name)
+		}
+
+	} else {
+		if Debug {
+			fmt.Printf("[DEBUG] Filename %v was not confirmed!\n", name)
+		}
+	}
+
+}
+
+func (fh *FileHandler) addToStorage(chunks [][]byte, hashes[][32]byte) {
+	fh.chunksMutex.Lock()
+	defer fh.chunksMutex.Unlock()
+
+	for i, hash := range hashes {
+		fh.chunks[hash] = chunks[i]
+	}
 }
 
 func (fh *FileHandler) handleDataRequest(req *DataRequest, from UDPAddr) {
 	repl := &DataReply{
 		Origin:      fh.name,
 		Destination: req.Origin,
-		HopLimit:    HOPLIMIT,
+		HopLimit:    fh.hopLimit,
 		HashValue:   req.HashValue,
 		Data:        fh.getChunk(To32Byte(req.HashValue)),
 	}
@@ -220,9 +269,6 @@ func (fh *FileHandler) downloadChunks(name string, hash [32]byte, peers []string
 
 	fh.filesMutex.RUnlock()
 
-	// TODO: f is being changed but not locked
-	// TODO: maybe use concurrent map type?
-
 	// Download each data chunk serially
 	chunks := make([]byte, 0)
 	for i := 0; i < int(f.NumChunks); i += 1 {
@@ -266,7 +312,7 @@ func (fh *FileHandler) downloadChunk(hash [32]byte, from string) []byte {
 	req := &DataRequest{
 		Origin:      fh.name,
 		Destination: from,
-		HopLimit:    HOPLIMIT,
+		HopLimit:    fh.hopLimit,
 		HashValue:   hash[:],
 	}
 

@@ -55,6 +55,8 @@ type GossipPacket struct {
 	DataReply *DataReply
 	SearchRequest *SearchRequest
 	SearchReply *SearchReply
+	TLCMessage *TLCMessage
+	Ack *TLCAck
 }
 
 type AddrGossipPacket struct {
@@ -101,6 +103,33 @@ type SearchResult struct {
 	ChunkCount uint64
 }
 
+
+type TxPublish struct {
+	Name string
+	Size int64 // Size in bytes
+	MetafileHash []byte
+}
+
+
+type BlockPublish struct {
+	PrevHash [32]byte
+	Transaction TxPublish
+}
+
+
+type TLCMessage struct {
+	Origin string
+	ID uint32
+	Confirmed int
+	TxBlock BlockPublish
+	VectorClock *StatusPacket
+	Fitness float32
+}
+
+
+type TLCAck PrivateMessage
+
+
 // Messages that can be directly sent from peer to peer:
 // PrivateMessages, DataRequest and DataReply
 type PointToPointMessage interface {
@@ -140,6 +169,13 @@ func (s *SearchReply) HopIsZero() bool         { return s.HopLimit == 0 }
 func (s *SearchReply) DecrHopLimit()           { s.HopLimit -= 1 }
 func (s *SearchReply) ToGossip() *GossipPacket { return &GossipPacket{SearchReply: s} }
 
+// Implement the point to point interface for TLCAck
+func (t *TLCAck) GetOrigin() string       { return t.Origin }
+func (t *TLCAck) GetDestination() string  { return t.Destination }
+func (t *TLCAck) HopIsZero() bool         { return t.HopLimit == 0 }
+func (t *TLCAck) DecrHopLimit()           { t.HopLimit -= 1 }
+func (t *TLCAck) ToGossip() *GossipPacket { return &GossipPacket{Ack: t} }
+
 // Get point to point message from GossipPacket
 func (g *GossipPacket) ToP2PMessage() PointToPointMessage {
 	if g.Private != nil {
@@ -150,6 +186,40 @@ func (g *GossipPacket) ToP2PMessage() PointToPointMessage {
 		return g.DataReply
 	} else if g.SearchReply != nil {
 		return g.SearchReply
+	} else if g.Ack != nil {
+		return g.Ack
+	} else {
+		return nil
+	}
+}
+
+// Messages that can be mongered
+type MongerableMessage interface {
+	GetOrigin() string
+	GetID()     uint32
+
+	ToGossip() *GossipPacket
+}
+
+
+// Implement the MongerableMessage interface for RumorMessage
+func (r *RumorMessage) GetOrigin() string { return r.Origin }
+func (r *RumorMessage) GetID() uint32 { return r.ID }
+func (r *RumorMessage) ToGossip() *GossipPacket { return &GossipPacket{ Rumor: r}}
+
+
+// Implement the MongerableMessage interface for TLCMessage
+func (t *TLCMessage) GetOrigin() string { return t.Origin }
+func (t *TLCMessage) GetID() uint32 { return t.ID }
+func (t *TLCMessage) ToGossip() *GossipPacket { return &GossipPacket{TLCMessage: t}}
+
+
+// Get MongerableMessage from GossipPacket
+func (g *GossipPacket) ToMongerableMessage() MongerableMessage {
+	if g.Rumor != nil {
+		return g.Rumor
+	} else if g.TLCMessage != nil {
+		return g.TLCMessage
 	} else {
 		return nil
 	}
